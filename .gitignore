@@ -22,6 +22,7 @@ output/
 # Secrets and logs
 .env
 scripts/setup_rvc.log
+scripts/setup_pod.log
 
 # Editor
 .vscode/
