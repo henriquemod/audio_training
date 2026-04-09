@@ -7,13 +7,14 @@
 #
 # Layer order (D-12 hard dependency chain):
 #   1. OS detection (Ubuntu 22.04 recommended, 24.04 best-effort)
-#   2. apt prerequisites (ca-certificates, wget, gnupg, software-properties-common)
-#   3. CUDA toolkit 12.1 (via NVIDIA apt keyring)
-#   4. Python 3.10 acquisition ladder (PATH -> mise -> deadsnakes PPA)
-#   5. App venv (.venv) + editable install
-#   6. RVC venv + weights (delegated to scripts/setup_rvc.sh — UNCHANGED)
-#   7. Weight size floor sanity check
-#   8. Final verification: doctor training-phase pre-flight (Plan 01-01 deliverable)
+#   2. apt prerequisites (ca-certificates, wget, gnupg, software-properties-common, xz-utils)
+#   3. ffmpeg >= 5.0 (BtbN static build — Ubuntu 22.04 apt ships 4.x, too old)
+#   4. CUDA toolkit 12.1 (via NVIDIA apt keyring)
+#   5. Python 3.10 acquisition ladder (PATH -> mise -> deadsnakes PPA)
+#   6. App venv (.venv) + editable install
+#   7. RVC venv + weights (delegated to scripts/setup_rvc.sh — UNCHANGED)
+#   8. Weight size floor sanity check
+#   9. Final verification: doctor training-phase pre-flight (Plan 01-01 deliverable)
 
 set -euo pipefail
 
@@ -23,6 +24,9 @@ RVC_DIR="$PROJECT_ROOT/rvc"
 APP_VENV="$PROJECT_ROOT/.venv"
 APP_EGG_INFO="$PROJECT_ROOT/src/train_audio_model.egg-info"
 CUDA_KEYRING_URL="https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb"
+# BtbN static ffmpeg build — GPL variant includes afftdn / loudnorm / silencedetect.
+# "latest" release is updated nightly and is ffmpeg 7.x; far above our >=5.0 floor.
+FFMPEG_STATIC_URL="https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz"
 
 FORCE=0
 if [[ "${1:-}" == "--force" ]]; then
@@ -41,6 +45,15 @@ if [[ -z "${_SETUP_POD_REEXEC:-}" ]]; then
 fi
 
 echo "=== setup_pod.sh started at $(date) ==="
+
+# Pod containers run as root and typically do not ship sudo. Fail fast with a
+# clear message if someone runs this on a non-root laptop shell instead of
+# erroring mid-apt.
+if [[ "${EUID:-$(id -u)}" -ne 0 ]]; then
+  echo "ERROR: setup_pod.sh must run as root (pods run as root; no sudo needed)." >&2
+  echo "       Current UID=${EUID:-$(id -u)}. This script is POD-ONLY." >&2
+  exit 1
+fi
 
 # Mandatory envelope for every apt invocation in this script (D-02/D-03).
 # Prevents tzdata / dpkg interactive prompts that would hang on a billing pod.
@@ -78,7 +91,58 @@ echo ""
 echo "--- Layer: apt prerequisites ---"
 apt-get update -y
 apt-get install -y --no-install-recommends \
-  ca-certificates wget gnupg software-properties-common
+  ca-certificates wget gnupg software-properties-common xz-utils
+
+# ---------- Layer: ffmpeg >= 5.0 (BtbN static build) ----------
+echo ""
+echo "--- Layer: ffmpeg >= 5.0 ---"
+# Ubuntu 22.04's apt ships ffmpeg 4.4 — below our >=5.0 floor (MIN_FFMPEG_VERSION
+# in src/doctor.py). Install a BtbN static build into /usr/local/bin instead.
+# Probe: real artifact version parse, matches how doctor.check_ffmpeg verifies.
+_ffmpeg_ok() {
+  command -v ffmpeg >/dev/null 2>&1 || return 1
+  local ver
+  ver="$(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')"
+  local major="${ver%%.*}"
+  [[ "$major" =~ ^[0-9]+$ ]] || return 1
+  (( major >= 5 )) || return 1
+  # Filter presence check — matches REQUIRED_FFMPEG_FILTERS in src/doctor.py.
+  local filters
+  filters="$(ffmpeg -hide_banner -filters 2>/dev/null)"
+  echo "$filters" | grep -q '\bafftdn\b'       || return 1
+  echo "$filters" | grep -q '\bloudnorm\b'     || return 1
+  echo "$filters" | grep -q '\bsilencedetect\b' || return 1
+  return 0
+}
+
+if _ffmpeg_ok; then
+  echo "ffmpeg already satisfies >=5.0 with required filters ($(ffmpeg -version | head -1))"
+else
+  # Remove any older apt-installed ffmpeg to avoid PATH shadowing /usr/local/bin.
+  if dpkg -l ffmpeg 2>/dev/null | grep -q '^ii'; then
+    echo "Removing apt-provided ffmpeg (<5.0) before installing static build..."
+    apt-get remove -y ffmpeg
+  fi
+  echo "Installing BtbN static ffmpeg build from $FFMPEG_STATIC_URL ..."
+  FFMPEG_TARBALL="/tmp/ffmpeg-static.tar.xz"
+  FFMPEG_EXTRACT_DIR="/tmp/ffmpeg-static"
+  rm -rf "$FFMPEG_EXTRACT_DIR"
+  mkdir -p "$FFMPEG_EXTRACT_DIR"
+  wget -qO "$FFMPEG_TARBALL" "$FFMPEG_STATIC_URL"
+  tar -xJf "$FFMPEG_TARBALL" -C "$FFMPEG_EXTRACT_DIR" --strip-components=1
+  install -m 0755 "$FFMPEG_EXTRACT_DIR/bin/ffmpeg"  /usr/local/bin/ffmpeg
+  install -m 0755 "$FFMPEG_EXTRACT_DIR/bin/ffprobe" /usr/local/bin/ffprobe
+  rm -rf "$FFMPEG_TARBALL" "$FFMPEG_EXTRACT_DIR"
+  hash -r
+fi
+
+# Post-install verification — fail loudly if the static build is missing filters.
+_ffmpeg_ok || {
+  echo "ERROR: ffmpeg install verification failed — version <5.0 or required filters missing" >&2
+  ffmpeg -version 2>&1 | head -3 >&2 || true
+  exit 1
+}
+echo "ffmpeg OK: $(ffmpeg -version | head -1)"
 
 # ---------- Layer: CUDA toolkit 12.1 ----------
 echo ""
