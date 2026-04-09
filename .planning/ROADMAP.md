@@ -26,8 +26,8 @@
   3. Running `python src/doctor.py --training` passes all checks on a provisioned pod: CUDA available, disk space floor met, GPU VRAM floor met, pretrained v2 weights present, hubert base present
   4. Unit tests for `check_disk_space_floor` and `check_gpu_vram_floor` pass in CI without a real GPU (mocked `shutil.disk_usage` and mocked `rvc/.venv` torch call)
 **Plans**: 2 plans
-- [ ] 01-01-doctor-training-checks-PLAN.md — Add check_disk_space_floor, check_gpu_vram_floor, check_rvc_mute_refs, check_hubert_base + --training flag + unit tests (BOOT-09, BOOT-10)
-- [ ] 01-02-setup-pod-script-PLAN.md — Create scripts/setup_pod.sh (CUDA→Python→app venv→RVC delegation→weight floor→doctor --training) (BOOT-01..BOOT-08)
+- [x] 01-01-doctor-training-checks-PLAN.md — Add check_disk_space_floor, check_gpu_vram_floor, check_rvc_mute_refs, check_hubert_base + --training flag + unit tests (BOOT-09, BOOT-10)
+- [x] 01-02-setup-pod-script-PLAN.md — Create scripts/setup_pod.sh (CUDA→Python→app venv→RVC delegation→weight floor→doctor --training) (BOOT-01..BOOT-08)
 **UI hint**: no
 
 ### Phase 2: Training CLI
@@ -41,7 +41,10 @@
   3. A run aborted after Stage 2 (SIGKILL simulation) re-invoked completes from Stage 3 onward, not from Stage 1, and produces the same final weight as an uninterrupted run would
   4. `python -m pytest tests/unit/test_train.py` passes without a GPU: all four builder functions (`build_rvc_preprocess_cmd`, `build_rvc_extract_f0_cmd`, `build_rvc_extract_feature_cmd`, `build_rvc_train_cmd`) assert exact argv contents for representative inputs
   5. On a deliberate training failure (bad experiment name), exit code is 3 and the last 30 lines of the failed subprocess stderr are printed to the terminal with stage context
-**Plans**: TBD
+**Plans**: 3 plans
+- [ ] 02-01-rvc-arg-builders-PLAN.md — Pure arg builders (4), filelist + config helpers, sentinel probes, preset/pretrained resolvers, full unit-test coverage (TRAIN-01..05, 13, 14)
+- [ ] 02-02-doctor-and-cli-PLAN.md — Doctor pre-flight (check_pretrained_v2_weights, check_training_dataset_nonempty, run_training_checks) + typer CLI with flag validation (TRAIN-01, 06, 12, 13)
+- [ ] 02-03-stage-runner-PLAN.md — Streamed subprocess runner, sentinel-skip orchestrator, exit-code mapping, failure tailing, Stage 4 weight cross-check (TRAIN-02, 07-12, 14)
 **UI hint**: no
 
 ### Phase 3: Index Training + Auto-Export
