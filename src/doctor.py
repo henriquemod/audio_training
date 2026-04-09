@@ -28,6 +28,7 @@ MODELS_DIR = PROJECT_ROOT / "models"
 MIN_FFMPEG_VERSION = (5, 0, 0)
 REQUIRED_PYTHON = (3, 10)
 REQUIRED_FFMPEG_FILTERS = ("afftdn", "loudnorm", "silencedetect")
+HUBERT_MIN_BYTES = 100_000_000
 
 
 @dataclass
@@ -347,6 +348,136 @@ def check_rvc_torch_cuda() -> CheckResult:
             fix_hint="Install PyTorch with CUDA: pip install torch==2.1.2 --index-url https://download.pytorch.org/whl/cu121",
         )
     return CheckResult(name="rvc torch+cuda", ok=True, detail=f"torch {lines[0]}")
+
+
+def check_disk_space_floor(path: Path, min_gb: int) -> CheckResult:
+    """Verify that `path` has at least `min_gb` GiB free.
+
+    Never raises: FileNotFoundError and PermissionError are converted to
+    ok=False results so pre-flight checks fail cleanly instead of crashing.
+    """
+    name = f"disk space floor ({min_gb} GiB at {path})"
+    try:
+        usage = shutil.disk_usage(path)
+    except FileNotFoundError:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=f"{path} does not exist",
+            fix_hint=f"Ensure the path exists before checking disk space (need {min_gb} GiB).",
+        )
+    except PermissionError:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=f"permission denied reading {path}",
+            fix_hint=f"Cannot stat {path}. Check filesystem permissions (need {min_gb} GiB).",
+        )
+    free_gib = usage.free / (1024**3)
+    if free_gib < min_gb:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=f"only {free_gib:.1f} GiB free",
+            fix_hint=f"Free up disk space or move the project. Need >= {min_gb} GiB.",
+        )
+    return CheckResult(name=name, ok=True, detail=f"{free_gib:.1f} GiB free")
+
+
+def check_gpu_vram_floor(min_gb: int) -> CheckResult:
+    """Verify the largest visible GPU reports at least `min_gb` GiB of VRAM.
+
+    Uses nvidia-smi from userland; never imports torch (preserves the
+    two-venv boundary). Never raises on parse or subprocess errors.
+    """
+    name = f"gpu vram floor ({min_gb} GiB)"
+    if shutil.which("nvidia-smi") is None:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail="nvidia-smi not found on PATH",
+            fix_hint="Install NVIDIA drivers so nvidia-smi is available.",
+        )
+    proc = subprocess.run(
+        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=proc.stderr.strip() or f"nvidia-smi exited {proc.returncode}",
+            fix_hint="nvidia-smi failed. Check driver installation.",
+        )
+    try:
+        mibs = [int(line.strip()) for line in proc.stdout.strip().splitlines() if line.strip()]
+    except ValueError:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=f"could not parse nvidia-smi output: {proc.stdout.strip()!r}",
+            fix_hint="Unexpected nvidia-smi output. Check driver version.",
+        )
+    if not mibs:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail="nvidia-smi returned no GPUs",
+            fix_hint="No GPUs visible. Check CUDA_VISIBLE_DEVICES and driver installation.",
+        )
+    largest_mib = max(mibs)
+    largest_gib = largest_mib / 1024
+    if largest_gib < min_gb:
+        return CheckResult(
+            name=name,
+            ok=False,
+            detail=f"largest GPU has {largest_gib:.1f} GiB VRAM",
+            fix_hint=f"Need a GPU with >= {min_gb} GiB VRAM for training.",
+        )
+    return CheckResult(name=name, ok=True, detail=f"{largest_gib:.1f} GiB VRAM (largest GPU)")
+
+
+def check_rvc_mute_refs() -> CheckResult:
+    """Verify RVC mute reference files exist. Phase 2 will tighten this."""
+    mute_dir = RVC_DIR / "logs" / "mute"
+    if not mute_dir.is_dir():
+        return CheckResult(
+            name="rvc mute refs",
+            ok=False,
+            detail=f"{mute_dir.relative_to(PROJECT_ROOT)} missing",
+            fix_hint="Run ./scripts/setup_rvc.sh --force to re-clone RVC.",
+        )
+    if not any(mute_dir.iterdir()):
+        return CheckResult(
+            name="rvc mute refs",
+            ok=False,
+            detail=f"{mute_dir.relative_to(PROJECT_ROOT)} is empty",
+            fix_hint="Run ./scripts/setup_rvc.sh --force.",
+        )
+    return CheckResult(name="rvc mute refs", ok=True)
+
+
+def check_hubert_base() -> CheckResult:
+    """Verify hubert_base.pt exists and is not a truncated download."""
+    hubert = RVC_DIR / "assets" / "hubert" / "hubert_base.pt"
+    if not hubert.exists():
+        return CheckResult(
+            name="hubert_base.pt",
+            ok=False,
+            detail=f"{hubert.relative_to(PROJECT_ROOT)} missing",
+            fix_hint="Run ./scripts/setup_rvc.sh (downloads pretrained weights).",
+        )
+    size = hubert.stat().st_size
+    if size < HUBERT_MIN_BYTES:
+        return CheckResult(
+            name="hubert_base.pt",
+            ok=False,
+            detail=f"only {size} bytes (expected >= {HUBERT_MIN_BYTES})",
+            fix_hint="Truncated download. Re-run ./scripts/setup_rvc.sh --force.",
+        )
+    return CheckResult(name="hubert_base.pt", ok=True, detail=f"{size} bytes")
 
 
 # ---------- CLI ----------
