@@ -46,6 +46,12 @@ class CheckResult:
     ok: bool
     detail: str = ""
     fix_hint: str = ""
+    # "error" (default) fails the pre-flight and blocks the pipeline.
+    # "warning" prints yellow and is treated as non-blocking by _run_checks
+    # and src/train.py's pre-flight gate. Used for soft thresholds like the
+    # disk-space floor, where the value is guidance (you might run low) not
+    # a hard dependency (the binary is missing).
+    severity: str = "error"
 
 
 Check = CheckResult  # alias for test imports
@@ -439,11 +445,21 @@ def check_disk_space_floor(path: Path, min_gb: int) -> CheckResult:
         )
     free_gib = usage.free / (1024**3)
     if free_gib < min_gb:
+        # Soft threshold: warn loudly but don't block. Training may still fit,
+        # and on a billing GPU pod a hard block on disk headroom is a worse
+        # failure mode than running out mid-stage (the user is already
+        # watching cost). Permission / missing-path branches stay as errors
+        # because those indicate a real filesystem misconfiguration.
         return CheckResult(
             name=name,
             ok=False,
-            detail=f"only {free_gib:.1f} GiB free",
-            fix_hint=f"Free up disk space or move the project. Need >= {min_gb} GiB.",
+            detail=f"only {free_gib:.1f} GiB free (recommended >= {min_gb} GiB)",
+            fix_hint=(
+                f"Training may still fit, but consider freeing disk space "
+                f"(recommended >= {min_gb} GiB). Clear ~/.cache/pip and "
+                f"~/.cache/huggingface if the pod is tight."
+            ),
+            severity="warning",
         )
     return CheckResult(name=name, ok=True, detail=f"{free_gib:.1f} GiB free")
 
@@ -735,19 +751,32 @@ def _run_checks(checks: list) -> bool:
     table.add_column("Detail", style="dim")
 
     all_ok = True
-    failures: list[CheckResult] = []
+    errors: list[CheckResult] = []
+    warnings: list[CheckResult] = []
     for check_fn in checks:
         result = check_fn()
-        mark = "[green]OK[/green]" if result.ok else "[red]FAIL[/red]"
+        if result.ok:
+            mark = "[green]OK[/green]"
+        elif result.severity == "warning":
+            mark = "[yellow]WARN[/yellow]"
+        else:
+            mark = "[red]FAIL[/red]"
         table.add_row(result.name, mark, result.detail)
         if not result.ok:
-            all_ok = False
-            failures.append(result)
+            if result.severity == "warning":
+                warnings.append(result)
+            else:
+                all_ok = False
+                errors.append(result)
 
     console.print(table)
-    if failures:
+    if warnings:
+        console.print("\n[bold yellow]Warnings (non-blocking):[/bold yellow]")
+        for w in warnings:
+            console.print(f"  - [cyan]{w.name}[/cyan]: {w.fix_hint or '(see detail above)'}")
+    if errors:
         console.print("\n[bold red]Fix the following before proceeding:[/bold red]")
-        for f in failures:
+        for f in errors:
             console.print(f"  - [cyan]{f.name}[/cyan]: {f.fix_hint or '(see detail above)'}")
     return all_ok
 

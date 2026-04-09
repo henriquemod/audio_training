@@ -164,6 +164,74 @@ def test_doctor_failure_exits_1(tmp_path, monkeypatch):
     assert "fix it" in combined
 
 
+def test_doctor_warning_only_does_not_block_pipeline(tmp_path, monkeypatch):
+    """A CheckResult with severity='warning' must NOT exit with code 1.
+
+    Regression guard for the disk-space-floor soft-threshold case: on a tight
+    GPU pod, the pipeline must still proceed to run_pipeline() and return its
+    rc. The warning should be surfaced on stderr but not gate execution.
+    """
+    def _warn_only_stub(*, dataset_dir, sample_rate, version, if_f0):
+        return [
+            CheckResult(name="stub-ok", ok=True, detail="ok"),
+            CheckResult(
+                name="disk space floor (20 GiB)",
+                ok=False,
+                detail="only 11.0 GiB free",
+                fix_hint="consider freeing ~/.cache/pip",
+                severity="warning",
+            ),
+        ]
+
+    monkeypatch.setattr("src.train.run_training_checks", _warn_only_stub)
+    monkeypatch.setattr("src.train.run_pipeline", lambda **kw: 0)
+    ds = _make_dataset(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "--experiment-name", "smoke",
+            "--dataset-dir", str(ds),
+        ],
+    )
+    assert result.exit_code == 0, f"warning alone must not block; stderr={result.stderr}"
+    # Warning should be surfaced to the user on stderr.
+    assert "disk space floor" in result.stderr
+    assert "11.0 GiB" in result.stderr
+
+
+def test_doctor_warning_plus_error_still_blocks(tmp_path, monkeypatch):
+    """If there's an error alongside a warning, the error still blocks."""
+    def _warn_and_error_stub(*, dataset_dir, sample_rate, version, if_f0):
+        return [
+            CheckResult(
+                name="disk",
+                ok=False,
+                detail="tight",
+                severity="warning",
+            ),
+            CheckResult(
+                name="hubert",
+                ok=False,
+                detail="missing",
+                fix_hint="download it",
+                severity="error",
+            ),
+        ]
+
+    monkeypatch.setattr("src.train.run_training_checks", _warn_and_error_stub)
+    ds = _make_dataset(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "--experiment-name", "smoke",
+            "--dataset-dir", str(ds),
+        ],
+    )
+    assert result.exit_code == 1
+    combined = (result.stdout or "") + (result.stderr or "")
+    assert "hubert" in combined
+
+
 def test_all_valid_reaches_runner(tmp_path, monkeypatch):
     """All flags valid + doctor pass -> run_pipeline is invoked and its rc is returned."""
     monkeypatch.setattr("src.train.run_training_checks", _all_ok_stub)

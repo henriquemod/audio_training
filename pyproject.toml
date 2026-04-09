@@ -37,6 +37,7 @@ ignore = [
 # sys.path fix-up must run before `from src.* import ...`
 "src/generate.py" = ["E402"]
 "src/preprocess.py" = ["E402"]
+"src/doctor.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

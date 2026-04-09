@@ -330,3 +330,61 @@ def test_run_training_checks_returns_list_of_results(tmp_path, monkeypatch):
     names = [r.name for r in results]
     assert "pretrained" in names
     assert "dataset" in names
+
+
+# --- _run_checks severity handling ---
+
+
+def test_run_checks_returns_true_when_only_warnings_fail():
+    """A non-ok CheckResult with severity='warning' must NOT block.
+
+    Regression guard for the disk-space-floor soft-threshold case: an 80GB
+    H100 pod with 11 GiB free should warn but still let the user run
+    `src/train.py`. If _run_checks ever starts treating warnings as errors
+    again, this test will catch it.
+    """
+    from src.doctor import CheckResult, _run_checks
+
+    checks = [
+        lambda: CheckResult(name="ok_check", ok=True, detail="fine"),
+        lambda: CheckResult(
+            name="soft_check",
+            ok=False,
+            detail="only 11.0 GiB free",
+            fix_hint="consider freeing space",
+            severity="warning",
+        ),
+    ]
+    assert _run_checks(checks) is True
+
+
+def test_run_checks_returns_false_when_any_error_fails():
+    from src.doctor import CheckResult, _run_checks
+
+    checks = [
+        lambda: CheckResult(
+            name="hard_check",
+            ok=False,
+            detail="missing binary",
+            fix_hint="install it",
+            severity="error",
+        ),
+        lambda: CheckResult(
+            name="soft_check",
+            ok=False,
+            detail="tight disk",
+            severity="warning",
+        ),
+    ]
+    assert _run_checks(checks) is False
+
+
+def test_run_checks_default_severity_is_error():
+    """CheckResult without explicit severity must default to 'error' so
+    existing checks keep their strict blocking behavior."""
+    from src.doctor import CheckResult, _run_checks
+
+    checks = [
+        lambda: CheckResult(name="legacy_check", ok=False, detail="broken"),
+    ]
+    assert _run_checks(checks) is False

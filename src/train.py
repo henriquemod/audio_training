@@ -1014,7 +1014,9 @@ def main(
         sample_rate=sample_rate, version=rvc_version, if_f0=if_f0
     )
 
-    # Step 4: doctor pre-flight (D-13 — exit 1 on any fail).
+    # Step 4: doctor pre-flight (D-13 — exit 1 on any error; warnings are
+    # non-blocking). Disk-space floor is the one soft check: it surfaces as
+    # severity="warning" so pods with tight but usable disk still proceed.
     dataset_dir_abs = dataset_dir.resolve()
     results = run_training_checks(
         dataset_dir=dataset_dir_abs,
@@ -1022,17 +1024,28 @@ def main(
         version=rvc_version,
         if_f0=if_f0,
     )
-    failed = [r for r in results if not r.ok]
-    if failed:
+    errors = [r for r in results if not r.ok and r.severity != "warning"]
+    warnings = [r for r in results if not r.ok and r.severity == "warning"]
+    if errors or warnings:
         table = Table(title="Training pre-flight checks")
         table.add_column("Check", style="cyan")
         table.add_column("Status")
         table.add_column("Detail", style="dim")
         for r in results:
-            status = "[green]OK[/green]" if r.ok else "[red]FAIL[/red]"
+            if r.ok:
+                status = "[green]OK[/green]"
+            elif r.severity == "warning":
+                status = "[yellow]WARN[/yellow]"
+            else:
+                status = "[red]FAIL[/red]"
             table.add_row(r.name, status, r.detail)
         console.print(table)
-        first = failed[0]
+        for w in warnings:
+            typer.echo(f"[warn] {w.name}: {w.detail}", err=True)
+            if w.fix_hint:
+                typer.echo(f"[hint] {w.fix_hint}", err=True)
+    if errors:
+        first = errors[0]
         typer.echo(f"[error] {first.name}: {first.detail}", err=True)
         if first.fix_hint:
             typer.echo(f"[hint] {first.fix_hint}", err=True)

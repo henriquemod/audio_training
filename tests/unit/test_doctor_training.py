@@ -51,6 +51,27 @@ def test_check_disk_space_floor_below():
     assert result.ok is False
     assert "5" in result.detail
     assert "20" in result.fix_hint
+    # Below-threshold is a soft failure: it warns but does not block the
+    # pipeline (see _run_checks and src/train.py pre-flight gate). Guard
+    # this here so a regression that promotes it back to "error" is caught.
+    assert result.severity == "warning"
+
+
+def test_check_disk_space_floor_missing_path_is_error_not_warning():
+    # FileNotFoundError means the path doesn't exist — that's a real
+    # configuration problem, not "you might run low". It must stay as an
+    # error so the pre-flight still blocks.
+    with patch("shutil.disk_usage", side_effect=FileNotFoundError):
+        result = check_disk_space_floor(Path("/nonexistent/path"), min_gb=20)
+    assert result.ok is False
+    assert result.severity == "error"
+
+
+def test_check_disk_space_floor_permission_error_is_error_not_warning():
+    with patch("shutil.disk_usage", side_effect=PermissionError):
+        result = check_disk_space_floor(Path("/root/forbidden"), min_gb=20)
+    assert result.ok is False
+    assert result.severity == "error"
 
 
 def test_check_disk_space_floor_missing_path():
