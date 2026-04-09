@@ -165,8 +165,24 @@ def test_check_mise_present():
     assert result.ok is True
 
 
-def test_check_mise_missing():
+def test_check_mise_missing_is_soft_ok():
+    # mise is a laptop-dev convenience; on pods it is not expected to exist.
+    # A missing `mise` binary must NOT fail the system-checks pre-flight that
+    # scripts/setup_rvc.sh runs, otherwise pod bootstrap aborts.
     with patch("subprocess.run", side_effect=FileNotFoundError):
+        result = check_mise()
+    assert result.ok is True
+    assert "optional" in result.detail.lower()
+    assert result.fix_hint == ""
+
+
+def test_check_mise_broken_install_is_soft_fail():
+    # A mise binary that exits non-zero (broken install) is still surfaced as
+    # a failure so laptop users notice, but only when the binary is present.
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 1
+        mock_run.return_value.stderr = "mise: config error"
+        mock_run.return_value.stdout = ""
         result = check_mise()
     assert result.ok is False
     assert "mise.jdx.dev" in result.fix_hint

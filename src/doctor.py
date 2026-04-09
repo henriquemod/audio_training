@@ -82,6 +82,15 @@ def parse_ffmpeg_version_display(output: str) -> str:
 
 
 def check_mise() -> CheckResult:
+    """mise is a laptop-dev convenience for pinning Python 3.10.
+
+    On pods (bare Ubuntu + NVIDIA driver) mise is not expected to be present —
+    Python 3.10 is acquired via the distro PATH or deadsnakes PPA instead, and
+    `check_python_version` is the real gate. Treat a missing mise as OK with a
+    neutral informational detail so setup_rvc.sh's `--system-only` pre-flight
+    does not abort on pods. A broken mise install (command present but exiting
+    nonzero) is still surfaced as a soft failure so laptop users notice.
+    """
     try:
         proc = subprocess.run(
             ["mise", "--version"],
@@ -92,8 +101,8 @@ def check_mise() -> CheckResult:
     except FileNotFoundError:
         return CheckResult(
             name="mise",
-            ok=False,
-            fix_hint="Install mise: https://mise.jdx.dev/ (curl https://mise.run | sh)",
+            ok=True,
+            detail="not installed (optional — only needed on dev laptops)",
         )
     if proc.returncode != 0:
         return CheckResult(
