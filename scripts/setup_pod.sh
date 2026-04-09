@@ -353,7 +353,7 @@ _check_size() {
     exit 1
   fi
   local size
-  size=$(stat -c '%s' "$path")
+  size=$(stat -c '%s' "$path" 2>/dev/null || echo 0)
   if (( size < min_bytes )); then
     echo "ERROR: $path is only $size bytes (min $min_bytes) — truncated download?" >&2
     exit 1
