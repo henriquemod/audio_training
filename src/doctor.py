@@ -104,6 +104,13 @@ def check_mise() -> CheckResult:
             ok=True,
             detail="not installed (optional — only needed on dev laptops)",
         )
+    except (PermissionError, OSError) as exc:
+        return CheckResult(
+            name="mise",
+            ok=False,
+            detail=f"cannot execute mise: {exc}",
+            fix_hint="Check mise binary permissions or reinstall: https://mise.jdx.dev/",
+        )
     if proc.returncode != 0:
         return CheckResult(
             name="mise",
@@ -143,6 +150,13 @@ def check_ffmpeg() -> CheckResult:
             name="ffmpeg",
             ok=False,
             fix_hint="Install ffmpeg: sudo apt install ffmpeg",
+        )
+    except (PermissionError, OSError) as exc:
+        return CheckResult(
+            name="ffmpeg",
+            ok=False,
+            detail=f"cannot execute ffmpeg: {exc}",
+            fix_hint="Check ffmpeg binary permissions or reinstall ffmpeg.",
         )
     if proc.returncode != 0:
         return CheckResult(
@@ -187,6 +201,13 @@ def check_ffmpeg_filters() -> CheckResult:
             name="ffmpeg filters",
             ok=False,
             fix_hint="Install ffmpeg: sudo apt install ffmpeg",
+        )
+    except (PermissionError, OSError) as exc:
+        return CheckResult(
+            name="ffmpeg filters",
+            ok=False,
+            detail=f"cannot execute ffmpeg: {exc}",
+            fix_hint="Check ffmpeg binary permissions or reinstall ffmpeg.",
         )
     if proc.returncode != 0:
         return CheckResult(
