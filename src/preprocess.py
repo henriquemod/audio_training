@@ -13,8 +13,15 @@ Fails loud on any ffmpeg error.
 from __future__ import annotations
 
 import shutil
+import sys
 import tempfile
 from pathlib import Path
+
+# Allow running as a script: ensure project root is on sys.path so
+# `from src.* import ...` works whether invoked as a module or a script.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
 
 import numpy as np
 import soundfile as sf
