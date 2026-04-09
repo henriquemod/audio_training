@@ -20,7 +20,15 @@ if [[ "${1:-}" == "--force" ]]; then
 fi
 
 mkdir -p "$(dirname "$LOG_FILE")"
-exec > >(tee -a "$LOG_FILE") 2>&1
+# Note: we deliberately do NOT use `exec > >(tee ...)` here because process
+# substitution swallows non-zero exit codes from the piped stage, breaking
+# `set -e`. Instead, run the whole script under a subshell piped to tee.
+if [[ -z "${_SETUP_RVC_REEXEC:-}" ]]; then
+  export _SETUP_RVC_REEXEC=1
+  set -o pipefail
+  "$0" "$@" 2>&1 | tee -a "$LOG_FILE"
+  exit "${PIPESTATUS[0]}"
+fi
 
 echo "=== setup_rvc.sh started at $(date) ==="
 echo "RVC commit: $RVC_COMMIT ($RVC_COMMIT_DATE)"
@@ -74,10 +82,13 @@ fi
 RVC_PIP="$RVC_DIR/.venv/bin/pip"
 RVC_PY="$RVC_DIR/.venv/bin/python"
 
-# Upgrade pip inside RVC venv
+# Pin pip <24.1 inside RVC venv.
+# fairseq 0.12.2 has legacy PEP 440 metadata (`PyYAML>=5.1.*`) that pip 24.1+
+# rejects with "ResolutionImpossible". This is the documented workaround for
+# RVC's unpinned fairseq dep.
 echo ""
-echo "--- Upgrading pip in rvc/.venv ---"
-"$RVC_PIP" install --upgrade pip
+echo "--- Pinning pip<24.1 in rvc/.venv (required for fairseq 0.12.2) ---"
+"$RVC_PIP" install 'pip<24.1'
 
 # Install PyTorch 2.1 with CUDA 12.1 BEFORE RVC requirements
 # (RVC's requirements.txt does not pin torch, so we control it.)
