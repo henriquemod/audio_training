@@ -345,7 +345,14 @@ Write the following test functions. The bodies for disk + VRAM tests are lifted 
 13. `test_check_hubert_base_truncated(tmp_path, monkeypatch)` — create file with 1000 bytes → ok=False, detail mentions `"1000"`
 14. `test_check_hubert_base_missing(tmp_path, monkeypatch)` — monkeypatch RVC_DIR to empty tmp_path → ok=False
 
-For monkeypatching module-level `RVC_DIR`, use `monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)`. Do NOT patch `PROJECT_ROOT` — it's used for `relative_to()` in detail strings; override it alongside RVC_DIR if needed (set `monkeypatch.setattr("src.doctor.PROJECT_ROOT", tmp_path)` too so `relative_to` doesn't raise `ValueError`).
+**Monkeypatch strategy for tests 10-14:** Because `check_rvc_mute_refs` and `check_hubert_base` call `.relative_to(PROJECT_ROOT)` in their failure branches, you MUST patch BOTH module-level paths to `tmp_path`:
+
+```python
+monkeypatch.setattr('src.doctor.RVC_DIR', tmp_path)
+monkeypatch.setattr('src.doctor.PROJECT_ROOT', tmp_path)
+```
+
+This ensures `.relative_to()` resolves correctly against the temp directory rather than raising `ValueError`. Apply this pattern to every test in the group that can hit the failure branches (tests 10, 11, 12 for mute_refs; tests 13, 14 for hubert_base).
 
 **Sparse file helper** for test 12 to avoid writing 100 MB:
 
@@ -375,6 +382,7 @@ Implements D-15.
     - `grep -n "check_mise" src/doctor.py` does NOT match inside the training set (mise deliberately excluded per D-09)
     - `.venv/bin/python src/doctor.py --help | grep -- "--training"` returns a match
     - `tests/unit/test_doctor_training.py` exists and imports all four new symbols + `HUBERT_MIN_BYTES`
+    - `grep -q "monkeypatch.setattr('src.doctor.PROJECT_ROOT'" tests/unit/test_doctor_training.py` (PROJECT_ROOT is patched alongside RVC_DIR in tests 10-14)
     - `.venv/bin/pytest tests/unit/test_doctor_training.py -x -q` exits 0 with at least 14 tests collected
     - `.venv/bin/pytest tests/unit/test_doctor_training.py -q -k "vram"` collects at least 5 tests
     - `.venv/bin/pytest tests/unit/test_doctor_training.py -q -k "disk"` collects at least 4 tests

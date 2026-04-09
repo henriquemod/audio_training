@@ -217,9 +217,12 @@ Create `/home/henrique/Development/train_audio_model/scripts/setup_pod.sh` as a 
     ```bash
     echo ""
     echo "--- Layer: post-install verification (doctor --training) ---"
+    # BOOT-06 / D-08: torch.cuda.is_available() check covered transitively via
+    # `src/doctor.py --training` → check_rvc_torch_cuda (crosses venv boundary via
+    # subprocess into rvc/.venv — matches the two-venv discipline).
     "$APP_VENV/bin/python" "$PROJECT_ROOT/src/doctor.py" --training
     ```
-    This is the crucial hand-off point: the `--training` flag is added in Plan 01-01 Task 2. If Plan 01-01 hasn't merged, this script cannot be tested end-to-end.
+    This is the crucial hand-off point: the `--training` flag is added in Plan 01-01 Task 2. If Plan 01-01 hasn't merged, this script cannot be tested end-to-end. The inline `BOOT-06 / D-08` comment MUST appear verbatim in the emitted bash script — it documents that the boot contract's GPU-availability requirement is satisfied transitively rather than by a direct `python -c "import torch"` call in this script (which would require activating `rvc/.venv`).
 
 16. **Success banner:**
     ```bash
@@ -254,6 +257,7 @@ Create `/home/henrique/Development/train_audio_model/scripts/setup_pod.sh` as a 
   <acceptance_criteria>
     - `test -x scripts/setup_pod.sh` succeeds (executable bit set)
     - `bash -n scripts/setup_pod.sh` exits 0 (bash syntax check)
+    - `grep -q "BOOT-06 / D-08" scripts/setup_pod.sh` (BOOT-06/D-08 delegation comment present on the `doctor.py --training` layer)
     - `head -1 scripts/setup_pod.sh` is `#!/usr/bin/env bash`
     - `grep -c "set -euo pipefail" scripts/setup_pod.sh` is at least 1
     - `grep -c "_SETUP_POD_REEXEC" scripts/setup_pod.sh` is at least 2 (the guard + the export)

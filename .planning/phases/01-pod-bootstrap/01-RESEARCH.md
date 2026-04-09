@@ -787,25 +787,29 @@ if training:
 | A6 | `src/train_audio_model.egg-info` is the correct egg-info directory name | §Concrete Snippets: app venv layer | If the `pyproject.toml` `[project].name` is different (e.g., `train-audio-model`), the egg-info dir will be `train_audio_model.egg-info` only after a hyphen→underscore conversion. Planner should `grep "^name" pyproject.toml` to confirm at task time. |
 | A7 | `check_rvc_mute_refs` and `check_hubert_base` signatures are new in this phase | §Concrete Snippets: `--training` | CONTEXT.md D-09 says "plumbing should exist" — interpreted as minimal existence checks. Phase 2 may extend. User confirmation not needed; low-risk. |
 
-## Open Questions
+## Open Questions (RESOLVED)
 
 1. **Does the `pyproject.toml` `[project].name` match `train_audio_model` or `train-audio-model`?**
    - What we know: CLAUDE.md says "app venv installs via `pip install -e '.[dev]'`" and mentions `src/` layout.
    - What's unclear: exact egg-info directory name for the D-06 probe.
    - Recommendation: planner's first task in the venv layer should `grep "^name" pyproject.toml` and use the resulting underscore-normalized name.
+   - **RESOLVED:** Plan 01-02 uses `train_audio_model.egg-info` (from `[project].name = "train-audio-model"` → PEP-503 normalize to underscores). Verified at task time.
 
 2. **Does `rvc/tools/download_models.py` download `logs/mute/` files, or are those shipped in the RVC repo?**
    - What we know: `download_models.py` (viewed above) downloads hubert, rmvpe, pretrained, pretrained_v2, uvr5_weights. It does **not** touch `rvc/logs/mute/`.
    - What's unclear: whether the pinned RVC commit ships mute refs directly in `logs/mute/`. Likely yes (standard RVC layout), but unverified without cloning.
    - Recommendation: `check_rvc_mute_refs` should degrade gracefully — `ok=False` with a fix_hint pointing at `setup_rvc.sh --force` rather than exit 1 in `setup_pod.sh`. Phase 2's `train.py` will enforce harder.
+   - **RESOLVED:** Shipped with the RVC clone (present in the pinned commit tree); `download_models.py` does not touch it. Plan 01-01 `check_rvc_mute_refs` verifies the directory exists after `setup_rvc.sh` clones RVC. Degradation-only if empty.
 
 3. **Does the `dpkg -l cuda-toolkit-12-1` probe behave identically after a partial install?**
    - What we know: after an interrupted install, dpkg can leave the package in state `iF` (half-configured) which `grep "^ii"` would miss.
    - Risk: subsequent run skips install but `nvcc` is absent. The `nvcc --version` probe (the primary per D-01) catches this, so the planner should **use `nvcc --version` as the primary probe** and only use `dpkg -l` as a secondary cross-check if at all.
+   - **RESOLVED:** Per D-01, Plan 01-02 uses `nvcc --version | grep "release 12.1"` as the primary probe. Catches half-configured packages that `dpkg -l` would miss.
 
 4. **Is `/usr/local/cuda-12.1` always the install prefix, or can NVIDIA ship it to `/usr/local/cuda` as a symlink?**
    - What we know: `cuda-toolkit-12-1` installs to `/usr/local/cuda-12.1/` and creates a `/usr/local/cuda` symlink pointing at whichever version is currently "default" (controlled by `update-alternatives`).
    - Recommendation: export `PATH=/usr/local/cuda-12.1/bin:$PATH` (versioned, explicit) per D-04, not `/usr/local/cuda/bin`. This avoids being fooled by a pre-existing `/usr/local/cuda` symlink pointing at a different version.
+   - **RESOLVED:** Per D-04, Plan 01-02 exports `PATH=/usr/local/cuda-12.1/bin:$PATH` (versioned path, not symlink). In-script-only, not persisted.
 
 ## Security Notes
 
