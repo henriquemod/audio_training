@@ -102,6 +102,14 @@ echo ""
 echo "--- Installing RVC requirements ---"
 "$RVC_PIP" install -r "$RVC_DIR/requirements.txt"
 
+# Pin gradio_client to match gradio 3.34.0.
+# RVC's requirements.txt pins gradio but leaves gradio_client unpinned, so
+# pip resolves gradio_client to a much newer version that removed the
+# `media_data` symbol gradio 3.34.0 imports. The matched pair is 0.2.7.
+echo ""
+echo "--- Pinning gradio_client==0.2.7 to match gradio 3.34.0 ---"
+"$RVC_PIP" install 'gradio_client==0.2.7'
+
 # Download pretrained weights
 echo ""
 echo "--- Downloading pretrained weights (hubert_base.pt, rmvpe.pt, ...) ---"
