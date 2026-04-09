@@ -3,8 +3,9 @@
 Orchestrates all four RVC training stages end-to-end as subprocesses into rvc/.venv,
 with always-on intrinsic probe-and-skip resume.
 
-Two-venv boundary: this module MUST NOT import torch, fairseq, faiss, or rvc.
-All RVC interaction is via subprocess.Popen(..., cwd=RVC_DIR, shell=False).
+Two-venv boundary: this module MUST NOT depend on torch / fairseq / faiss / rvc
+at the Python level. All RVC interaction is via subprocess.Popen(..., cwd=RVC_DIR,
+shell=False) — no in-process imports of the RVC stack are permitted.
 
 Exit codes:
   0  success (incl. raw exit 61 from RVC's os._exit(2333333))
@@ -441,8 +442,10 @@ def _write_filelist(
 
     gt_stems = _stems(gt_dir, ".wav")
     feat_stems = _stems(feat_dir, ".npy")
-    f0_stems = {n[: -len(".wav")] for n in _stems(f0_dir, ".wav.npy")}
-    f0nsf_stems = {n[: -len(".wav")] for n in _stems(f0nsf_dir, ".wav.npy")}
+    # Stage 2 files are named like "<stem>.wav.npy"; _stems strips the full
+    # ".wav.npy" suffix, so no secondary strip is needed.
+    f0_stems = _stems(f0_dir, ".wav.npy")
+    f0nsf_stems = _stems(f0nsf_dir, ".wav.npy")
 
     common = (
         gt_stems & feat_stems & f0_stems & f0nsf_stems if if_f0 else gt_stems & feat_stems
