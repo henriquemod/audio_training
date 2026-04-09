@@ -58,6 +58,9 @@ def test_check_disk_space_floor_missing_path():
         result = check_disk_space_floor(Path("/nonexistent/path"), min_gb=20)
     assert result.ok is False
     assert result.detail  # non-empty
+    # Lock in the specific failure mode so a regression that swaps the
+    # FileNotFoundError and PermissionError branches is caught.
+    assert "does not exist" in result.detail or "not found" in result.detail.lower()
 
 
 def test_check_disk_space_floor_permission_error():
