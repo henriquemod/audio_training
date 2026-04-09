@@ -104,57 +104,55 @@ Explicitly excluded. Documented to prevent scope creep and accidental re-additio
 
 ## Traceability
 
-Empty initially. Populated by `gsd-roadmapper` during Step 8.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BOOT-01 | — | Pending |
-| BOOT-02 | — | Pending |
-| BOOT-03 | — | Pending |
-| BOOT-04 | — | Pending |
-| BOOT-05 | — | Pending |
-| BOOT-06 | — | Pending |
-| BOOT-07 | — | Pending |
-| BOOT-08 | — | Pending |
-| BOOT-09 | — | Pending |
-| BOOT-10 | — | Pending |
-| TRAIN-01 | — | Pending |
-| TRAIN-02 | — | Pending |
-| TRAIN-03 | — | Pending |
-| TRAIN-04 | — | Pending |
-| TRAIN-05 | — | Pending |
-| TRAIN-06 | — | Pending |
-| TRAIN-07 | — | Pending |
-| TRAIN-08 | — | Pending |
-| TRAIN-09 | — | Pending |
-| TRAIN-10 | — | Pending |
-| TRAIN-11 | — | Pending |
-| TRAIN-12 | — | Pending |
-| TRAIN-13 | — | Pending |
-| TRAIN-14 | — | Pending |
-| INDEX-01 | — | Pending |
-| INDEX-02 | — | Pending |
-| INDEX-03 | — | Pending |
-| INDEX-04 | — | Pending |
-| INDEX-05 | — | Pending |
-| INDEX-06 | — | Pending |
-| INDEX-07 | — | Pending |
-| ORCH-01 | — | Pending |
-| ORCH-02 | — | Pending |
-| ORCH-03 | — | Pending |
-| ORCH-04 | — | Pending |
-| ORCH-05 | — | Pending |
-| ORCH-06 | — | Pending |
-| DOCS-01 | — | Pending |
-| DOCS-02 | — | Pending |
-| DOCS-03 | — | Pending |
-| DOCS-04 | — | Pending |
+| BOOT-01 | Phase 1 | Pending |
+| BOOT-02 | Phase 1 | Pending |
+| BOOT-03 | Phase 1 | Pending |
+| BOOT-04 | Phase 1 | Pending |
+| BOOT-05 | Phase 1 | Pending |
+| BOOT-06 | Phase 1 | Pending |
+| BOOT-07 | Phase 1 | Pending |
+| BOOT-08 | Phase 1 | Pending |
+| BOOT-09 | Phase 1 | Pending |
+| BOOT-10 | Phase 1 | Pending |
+| TRAIN-01 | Phase 2 | Pending |
+| TRAIN-02 | Phase 2 | Pending |
+| TRAIN-03 | Phase 2 | Pending |
+| TRAIN-04 | Phase 2 | Pending |
+| TRAIN-05 | Phase 2 | Pending |
+| TRAIN-06 | Phase 2 | Pending |
+| TRAIN-07 | Phase 2 | Pending |
+| TRAIN-08 | Phase 2 | Pending |
+| TRAIN-09 | Phase 2 | Pending |
+| TRAIN-10 | Phase 2 | Pending |
+| TRAIN-11 | Phase 2 | Pending |
+| TRAIN-12 | Phase 2 | Pending |
+| TRAIN-13 | Phase 2 | Pending |
+| TRAIN-14 | Phase 2 | Pending |
+| INDEX-01 | Phase 3 | Pending |
+| INDEX-02 | Phase 3 | Pending |
+| INDEX-03 | Phase 3 | Pending |
+| INDEX-04 | Phase 3 | Pending |
+| INDEX-05 | Phase 3 | Pending |
+| INDEX-06 | Phase 3 | Pending |
+| INDEX-07 | Phase 3 | Pending |
+| ORCH-01 | Phase 4 | Pending |
+| ORCH-02 | Phase 4 | Pending |
+| ORCH-03 | Phase 4 | Pending |
+| ORCH-04 | Phase 4 | Pending |
+| ORCH-05 | Phase 4 | Pending |
+| ORCH-06 | Phase 4 | Pending |
+| DOCS-01 | Phase 5 | Pending |
+| DOCS-02 | Phase 5 | Pending |
+| DOCS-03 | Phase 5 | Pending |
+| DOCS-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 41 total
-- Mapped to phases: 0 (roadmap not yet created)
-- Unmapped: 41 ⚠️ (expected — traceability fills in at Step 8)
+- Mapped to phases: 41
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-09*
-*Last updated: 2026-04-09 after initial definition*
+*Last updated: 2026-04-09 — traceability filled in by gsd-roadmapper*
