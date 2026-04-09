@@ -12,6 +12,11 @@ Exit codes:
   1  config / setup error (missing weights, missing dataset, failing doctor pre-flight)
   2  user input error (bad CLI flag combinations, bad preset name, invalid experiment name)
   3  runtime error (Stage N subprocess non-{0,61} exit, missing output file)
+
+Removed flags (tracked deviations):
+  --resume    D-05: removed in favor of always-on intrinsic probe-and-skip resume.
+              Every re-invocation with the same --experiment-name resumes where
+              the last run stopped; there is no separate opt-in flag.
 """
 
 from __future__ import annotations
@@ -29,10 +34,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
+import typer  # noqa: E402
+from rich.console import Console  # noqa: E402
+from rich.table import Table  # noqa: E402
+
 from src.doctor import (  # noqa: E402
     PROJECT_ROOT,
     RVC_DIR,
     RVC_VENV_PYTHON,
+    run_training_checks,
 )
 from src.preprocess import AUDIO_EXTS  # noqa: E402
 
@@ -532,3 +542,175 @@ def _write_exp_config(
     exp_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     return dst
+
+
+# ---------- CLI validation ----------
+
+
+def _validate_cli_flags(
+    *,
+    experiment_name: str,
+    sample_rate: int,
+    rvc_version: str,
+    f0_method: str,
+    preset: str,
+) -> Optional[str]:
+    """Return None if all flags valid, else an error string for stderr.
+
+    Pure function — no I/O, no side effects. Caller handles exit.
+    """
+    if not validate_experiment_name(experiment_name):
+        return (
+            f"invalid --experiment-name {experiment_name!r}: "
+            f"must match {EXPERIMENT_NAME_RE} (1-64 chars, alnum + _ + -)"
+        )
+    if sample_rate not in VALID_SAMPLE_RATES:
+        return (
+            f"invalid --sample-rate {sample_rate}: must be one of {VALID_SAMPLE_RATES}"
+        )
+    if rvc_version not in VALID_VERSIONS:
+        return (
+            f"invalid --rvc-version {rvc_version!r}: must be one of {VALID_VERSIONS}"
+        )
+    if f0_method not in VALID_F0_METHODS:
+        return (
+            f"invalid --f0-method {f0_method!r}: must be one of {VALID_F0_METHODS}"
+        )
+    if preset not in VALID_PRESETS:
+        return f"invalid --preset {preset!r}: must be one of {VALID_PRESETS}"
+    # Open Q4 / Risk: webui silently corrects v1+32k; we reject explicitly.
+    if rvc_version == "v1" and sample_rate == 32000:
+        return (
+            "invalid combination: --rvc-version v1 with --sample-rate 32000 is "
+            "unsupported. Use --sample-rate 40000 or 48000 with v1."
+        )
+    return None
+
+
+# ---------- typer CLI ----------
+
+app = typer.Typer(
+    add_completion=False,
+    help="Train an RVC voice model end-to-end via the four-stage pipeline.",
+)
+console = Console()
+
+
+@app.command()
+def main(
+    experiment_name: str = typer.Option(
+        ...,
+        "--experiment-name",
+        help="Experiment name (alnum + _ + -, 1-64 chars). Used as RVC exp dir and output weight filename.",
+    ),
+    dataset_dir: Path = typer.Option(
+        ...,
+        "--dataset-dir",
+        help="Directory of preprocessed audio clips.",
+    ),
+    sample_rate: int = typer.Option(
+        40000,
+        "--sample-rate",
+        help="Target sample rate: 32000, 40000, or 48000.",
+    ),
+    rvc_version: str = typer.Option(
+        "v2",
+        "--rvc-version",
+        help="RVC model version: v1 or v2.",
+    ),
+    f0_method: str = typer.Option(
+        "rmvpe",
+        "--f0-method",
+        help="F0 extraction: pm, harvest, rmvpe, or rmvpe_gpu.",
+    ),
+    preset: str = typer.Option(
+        "balanced",
+        "--preset",
+        help="Hyperparameter preset: smoke, low, balanced, high.",
+    ),
+    epochs: Optional[int] = typer.Option(
+        None, "--epochs", help="Override preset epochs."
+    ),
+    batch_size: Optional[int] = typer.Option(
+        None, "--batch-size", help="Override preset batch size."
+    ),
+    save_every: Optional[int] = typer.Option(
+        None, "--save-every", help="Override preset save_every."
+    ),
+    num_procs: int = typer.Option(
+        DEFAULT_NUM_PROCS,
+        "--num-procs",
+        help="Worker processes for stages 1 and 2.",
+    ),
+    gpus: str = typer.Option(
+        "0",
+        "--gpus",
+        help="GPU ids for stage 4, dash-separated (e.g. '0' or '0-1').",
+    ),
+    verbose: bool = typer.Option(
+        False,
+        "--verbose",
+        help="Print full failure tail on error.",
+    ),
+) -> None:
+    """Run the RVC training pipeline end-to-end (stages 1-4)."""
+    # Step 1: validate CLI flag combinations (exit 2 on any failure).
+    err = _validate_cli_flags(
+        experiment_name=experiment_name,
+        sample_rate=sample_rate,
+        rvc_version=rvc_version,
+        f0_method=f0_method,
+        preset=preset,
+    )
+    if err:
+        typer.echo(f"[error] {err}", err=True)
+        raise typer.Exit(code=2)
+
+    # Step 2: resolve preset + overrides (D-01/D-02/D-03).
+    hp = resolve_preset(
+        preset, epochs=epochs, batch_size=batch_size, save_every=save_every
+    )
+
+    # Step 3: resolve pretrained paths (D-21).
+    if_f0 = f0_method != "none"  # always True for valid methods; placeholder for future "none"
+    pretrained_g, pretrained_d = resolve_pretrained_paths(
+        sample_rate=sample_rate, version=rvc_version, if_f0=if_f0
+    )
+
+    # Step 4: doctor pre-flight (D-13 — exit 1 on any fail).
+    dataset_dir_abs = dataset_dir.resolve()
+    results = run_training_checks(
+        dataset_dir=dataset_dir_abs,
+        sample_rate=sample_rate,
+        version=rvc_version,
+        if_f0=if_f0,
+    )
+    failed = [r for r in results if not r.ok]
+    if failed:
+        table = Table(title="Training pre-flight checks")
+        table.add_column("Check", style="cyan")
+        table.add_column("Status")
+        table.add_column("Detail", style="dim")
+        for r in results:
+            status = "[green]OK[/green]" if r.ok else "[red]FAIL[/red]"
+            table.add_row(r.name, status, r.detail)
+        console.print(table)
+        first = failed[0]
+        typer.echo(f"[error] {first.name}: {first.detail}", err=True)
+        if first.fix_hint:
+            typer.echo(f"[hint] {first.fix_hint}", err=True)
+        raise typer.Exit(code=1)
+
+    # Step 5: stage runner (Plan 03 will fill this in).
+    console.print(
+        f"[yellow]TODO Plan 03: stage runner not yet wired. "
+        f"exp={experiment_name} hp={hp} dataset={dataset_dir_abs} "
+        f"pretrained_g={pretrained_g} pretrained_d={pretrained_d} "
+        f"num_procs={num_procs} gpus={gpus} f0={f0_method} verbose={verbose}"
+        f"[/yellow]"
+    )
+    raise typer.Exit(code=0)
+
+
+if __name__ == "__main__":
+    app()
