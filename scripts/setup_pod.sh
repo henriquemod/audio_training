@@ -301,6 +301,12 @@ echo "--- Layer: RVC venv + weights ---"
 #      (hubert, rmvpe, pretrained_v2/f0G40k, pretrained_v2/f0D40k) plus the
 #      small uvr5 dereverb sentinel vocals.onnx
 # --force disables the skip: the user explicitly asked for a clean reinstall.
+# DUPLICATED PIN: this hash is also hardcoded in scripts/setup_rvc.sh (the
+# `git checkout` line). BOOT-05 forbids modifying setup_rvc.sh, so we carry a
+# copy here for the warm-run skip probe. If the pin in setup_rvc.sh ever
+# changes, update this value too. Staleness is fail-safe: a mismatched pin
+# silently disables the skip optimization and always delegates to setup_rvc.sh
+# — it never breaks the cold-install path.
 RVC_COMMIT_PIN="7ef19867780cf703841ebafb565a4e47d1ea86ff"
 _rvc_already_provisioned() {
   [[ "$FORCE" -ne 1 ]] || return 1
