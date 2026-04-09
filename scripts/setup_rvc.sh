@@ -5,7 +5,7 @@
 set -euo pipefail
 
 RVC_REPO="https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI.git"
-RVC_COMMIT="7ef19867780cef3ba1b45b41ade38e3295bf6c9d"
+RVC_COMMIT="7ef19867780cf703841ebafb565a4e47d1ea86ff"
 RVC_COMMIT_DATE="2024-11-24"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RVC_DIR="$PROJECT_ROOT/rvc"
