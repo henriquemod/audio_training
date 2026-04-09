@@ -7,8 +7,8 @@
 
 ## Phases
 
-- [ ] **Phase 1: Pod Bootstrap** - `scripts/setup_pod.sh` takes a bare Ubuntu + NVIDIA-driver pod to fully provisioned, idempotently
-- [ ] **Phase 2: Training CLI** - `python src/train.py` runs the full RVC training pipeline end-to-end with sentinel-based resume and doctor pre-flight
+- [x] **Phase 1: Pod Bootstrap** - `scripts/setup_pod.sh` takes a bare Ubuntu + NVIDIA-driver pod to fully provisioned, idempotently
+- [x] **Phase 2: Training CLI** - `python src/train.py` runs the full RVC training pipeline end-to-end with sentinel-based resume and doctor pre-flight
 - [ ] **Phase 3: Index Training + Auto-Export** - FAISS index build (Stage 5) and deterministic export to `models/<name>/` complete the pipeline
 - [ ] **Phase 4: Shell Orchestration + Remote Source** - `scripts/train.sh` one-liner and `--dataset-url` remote pull make the pod workflow self-contained
 - [ ] **Phase 5: Pod Shutdown Documentation** - README section documents end-to-end pod workflow and per-provider auto-stop patterns
