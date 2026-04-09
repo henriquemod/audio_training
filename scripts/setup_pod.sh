@@ -139,7 +139,11 @@ _ffmpeg_ok() {
 }
 
 if _ffmpeg_ok; then
-  echo "ffmpeg already satisfies >=5.0 with required filters ($(ffmpeg -version | head -1))"
+  # Capture the version line into a variable instead of running a pipeline
+  # inside command substitution — avoids SIGPIPE from `head -1` closing the
+  # pipe under `set -o pipefail` on future bash versions.
+  ver_line="$(ffmpeg -version 2>/dev/null | head -1 || true)"
+  echo "ffmpeg already satisfies >=5.0 with required filters (${ver_line})"
 else
   # Remove any older apt-installed ffmpeg to avoid PATH shadowing /usr/local/bin.
   if dpkg -l ffmpeg 2>/dev/null | grep -q '^ii'; then
@@ -165,7 +169,8 @@ _ffmpeg_ok || {
   ffmpeg -version 2>&1 | head -3 >&2 || true
   exit 1
 }
-echo "ffmpeg OK: $(ffmpeg -version | head -1)"
+ver_line="$(ffmpeg -version 2>/dev/null | head -1 || true)"
+echo "ffmpeg OK: ${ver_line}"
 
 # ---------- Layer: CUDA toolkit 12.1 ----------
 echo ""
