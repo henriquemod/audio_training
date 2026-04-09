@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+.pytest_cache/
+.coverage
+htmlcov/
+.ruff_cache/
+*.egg-info/
+
+# RVC clone and its venv
+rvc/
+
+# User data (never commit audio or trained models)
+dataset/raw/
+dataset/processed/
+models/*.pth
+models/*.index
+output/
+
+# Secrets and logs
+.env
+scripts/setup_rvc.log
+
+# Editor
+.vscode/
+.idea/
+*.swp

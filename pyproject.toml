@@ -1,0 +1,37 @@
+[project]
+name = "train-audio-model"
+version = "0.1.0"
+description = "Local voice cloning pipeline: train RVC v2 on your voice, generate audio from text"
+requires-python = "==3.10.*"
+dependencies = [
+    "edge-tts==6.1.12",
+    "soundfile==0.12.1",
+    "typer==0.12.3",
+    "python-dotenv==1.0.1",
+    "rich==13.7.1",
+    "numpy>=1.24,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest==8.2.0",
+    "pytest-mock==3.14.0",
+    "ruff==0.4.4",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+extend-exclude = ["rvc"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
+ignore = ["E501"]  # line length handled by formatter
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "network: tests that require internet access (deselect with '-m \"not network\"')",
+    "gpu: tests that require a CUDA GPU (deselect with '-m \"not gpu\"')",
+]
+addopts = "-m 'not network and not gpu'"
