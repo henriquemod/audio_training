@@ -23,11 +23,20 @@ dev = [
 [tool.ruff]
 line-length = 100
 target-version = "py310"
-extend-exclude = ["rvc"]
+extend-exclude = ["rvc", "src/slicer2.py"]  # slicer2.py is vendored upstream
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "N", "SIM"]
-ignore = ["E501"]  # line length handled by formatter
+ignore = [
+    "E501",   # line length handled by formatter
+    "UP007",  # Optional[X] required by typer 0.12.3 (no PEP 604 support)
+    "B008",   # typer.Option() in defaults is the typer idiom
+]
+
+[tool.ruff.lint.per-file-ignores]
+# sys.path fix-up must run before `from src.* import ...`
+"src/generate.py" = ["E402"]
+"src/preprocess.py" = ["E402"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

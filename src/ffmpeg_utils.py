@@ -6,6 +6,7 @@ All ffmpeg calls across this project go through `run_ffmpeg()`. The wrapper:
 - Verifies the expected output file exists and is non-empty
 - Raises FfmpegError with full context on any failure
 """
+
 from __future__ import annotations
 
 import subprocess

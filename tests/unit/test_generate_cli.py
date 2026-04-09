@@ -1,4 +1,5 @@
 """Unit tests for src/generate.py CLI."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -11,6 +12,7 @@ runner = CliRunner()
 
 
 # --- build_rvc_subprocess_cmd ---
+
 
 def test_build_rvc_subprocess_cmd_has_required_args(tmp_path: Path):
     cmd = build_rvc_subprocess_cmd(
@@ -42,6 +44,7 @@ def test_build_rvc_subprocess_cmd_has_required_args(tmp_path: Path):
 
 
 # --- CLI flag validation ---
+
 
 def test_cli_requires_text_or_text_file():
     result = runner.invoke(app, [])

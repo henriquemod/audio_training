@@ -1,5 +1,6 @@
 """Integration test using real ffmpeg. Generates synthetic audio and runs
 the full preprocess pipeline against it."""
+
 from __future__ import annotations
 
 import shutil
@@ -24,10 +25,7 @@ def _synth_speech_like_wav(path: Path, num_segments: int = 4, segment_s: float =
     """
     # Build a filter_complex that concatenates N [tone][silence] segment pairs.
     # Each tone segment is a 220 Hz sine mixed with low-level noise, mono 44.1k.
-    tone_filter = (
-        f"sine=frequency=220:duration={segment_s}:sample_rate=44100,"
-        "volume=0.5"
-    )
+    tone_filter = f"sine=frequency=220:duration={segment_s}:sample_rate=44100," "volume=0.5"
     silence_filter = "anullsrc=r=44100:cl=mono,atrim=duration=1.0,asetpts=N/SR/TB"
 
     parts = []
@@ -44,12 +42,20 @@ def _synth_speech_like_wav(path: Path, num_segments: int = 4, segment_s: float =
 
     subprocess.run(
         [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
+            "ffmpeg",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
             *inputs,
-            "-filter_complex", filter_complex,
-            "-map", "[out]",
-            "-ac", "1",
-            "-ar", "44100",
+            "-filter_complex",
+            filter_complex,
+            "-map",
+            "[out]",
+            "-ac",
+            "1",
+            "-ar",
+            "44100",
             str(path),
         ],
         check=True,

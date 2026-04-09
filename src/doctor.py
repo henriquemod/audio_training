@@ -4,6 +4,7 @@ Every script calls the relevant subset of these checks before doing work.
 Running `python src/doctor.py` directly prints a full report and exits
 non-zero on any failure.
 """
+
 from __future__ import annotations
 
 import re
@@ -42,6 +43,7 @@ Check = CheckResult  # alias for test imports
 
 # ---------- Parsing helpers ----------
 
+
 def parse_ffmpeg_version(output: str) -> tuple[int, int, int] | None:
     """Parse `ffmpeg -version` output and return (major, minor, patch), or None."""
     match = re.search(r"ffmpeg version (\d+)\.(\d+)(?:\.(\d+))?", output)
@@ -54,6 +56,7 @@ def parse_ffmpeg_version(output: str) -> tuple[int, int, int] | None:
 
 
 # ---------- System checks ----------
+
 
 def check_mise() -> CheckResult:
     try:
@@ -208,6 +211,7 @@ def check_nvidia_smi() -> CheckResult:
 
 # ---------- Project state checks ----------
 
+
 def check_rvc_cloned() -> CheckResult:
     if not RVC_DIR.exists():
         return CheckResult(
@@ -271,6 +275,7 @@ def check_model_file(model_name: str) -> CheckResult:
 
 # ---------- Runtime checks ----------
 
+
 def check_edge_tts_importable() -> CheckResult:
     try:
         import edge_tts  # noqa: F401
@@ -292,11 +297,13 @@ def check_slicer2_importable() -> CheckResult:
     """
     try:
         from src.slicer2 import Slicer  # noqa: F401
+
         return CheckResult(name="slicer2 importable", ok=True)
     except ImportError:
         pass
     try:
         import slicer2  # noqa: F401
+
         return CheckResult(name="slicer2 importable", ok=True)
     except ImportError as exc:
         return CheckResult(
@@ -377,7 +384,9 @@ def main(
     system_only: bool = typer.Option(False, "--system-only", help="Only check system-level deps"),
     rvc_only: bool = typer.Option(False, "--rvc-only", help="Only check RVC state"),
     runtime: bool = typer.Option(False, "--runtime", help="Only check Python runtime imports"),
-    model: Optional[str] = typer.Option(None, "--model", help="Also verify this model exists in models/"),
+    model: Optional[str] = typer.Option(
+        None, "--model", help="Also verify this model exists in models/"
+    ),
 ) -> None:
     """Run dependency checks. Exits non-zero if any check fails."""
     system_checks = [

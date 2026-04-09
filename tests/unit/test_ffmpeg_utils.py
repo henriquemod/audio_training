@@ -1,4 +1,5 @@
 """Unit tests for src/ffmpeg_utils.py."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -43,7 +44,9 @@ def test_run_ffmpeg_missing_output_raises(tmp_path: Path, fake_ffmpeg):
             context="slicing stage",
             expected_output=out,
         )
-    assert "did not produce" in str(excinfo.value).lower() or "missing" in str(excinfo.value).lower()
+    assert (
+        "did not produce" in str(excinfo.value).lower() or "missing" in str(excinfo.value).lower()
+    )
 
 
 def test_run_ffmpeg_empty_output_raises(tmp_path: Path, fake_ffmpeg):

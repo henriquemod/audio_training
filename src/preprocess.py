@@ -10,6 +10,7 @@ Pipeline per input file:
 Idempotent: wipes dataset/processed/ on every run.
 Fails loud on any ffmpeg error.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -43,13 +44,18 @@ class PreprocessError(RuntimeError):
 
 # ---------- ffmpeg arg builders (pure, easy to unit-test) ----------
 
+
 def build_canonical_args(input_path: Path, output_path: Path) -> list[str]:
     """Build ffmpeg args to convert any audio to 44.1kHz mono 16-bit WAV."""
     return [
-        "-i", str(input_path),
-        "-ar", str(CANONICAL_SR),
-        "-ac", "1",
-        "-sample_fmt", "s16",
+        "-i",
+        str(input_path),
+        "-ar",
+        str(CANONICAL_SR),
+        "-ac",
+        "1",
+        "-sample_fmt",
+        "s16",
         str(output_path),
     ]
 
@@ -57,11 +63,16 @@ def build_canonical_args(input_path: Path, output_path: Path) -> list[str]:
 def build_denoise_args(input_path: Path, output_path: Path) -> list[str]:
     """Highpass + lowpass + mild FFT denoise."""
     return [
-        "-i", str(input_path),
-        "-af", "highpass=f=75,lowpass=f=15000,afftdn=nr=12",
-        "-ar", str(CANONICAL_SR),
-        "-ac", "1",
-        "-sample_fmt", "s16",
+        "-i",
+        str(input_path),
+        "-af",
+        "highpass=f=75,lowpass=f=15000,afftdn=nr=12",
+        "-ar",
+        str(CANONICAL_SR),
+        "-ac",
+        "1",
+        "-sample_fmt",
+        "s16",
         str(output_path),
     ]
 
@@ -69,16 +80,22 @@ def build_denoise_args(input_path: Path, output_path: Path) -> list[str]:
 def build_loudnorm_args(input_path: Path, output_path: Path, target_lufs: int) -> list[str]:
     """EBU R128 loudness normalization to target LUFS."""
     return [
-        "-i", str(input_path),
-        "-af", f"loudnorm=I={target_lufs}:TP=-1:LRA=11",
-        "-ar", str(CANONICAL_SR),
-        "-ac", "1",
-        "-sample_fmt", "s16",
+        "-i",
+        str(input_path),
+        "-af",
+        f"loudnorm=I={target_lufs}:TP=-1:LRA=11",
+        "-ar",
+        str(CANONICAL_SR),
+        "-ac",
+        "1",
+        "-sample_fmt",
+        "s16",
         str(output_path),
     ]
 
 
 # ---------- Slicing ----------
+
 
 def _slice_with_slicer2(
     wav_path: Path,
@@ -129,6 +146,7 @@ def _slice_with_slicer2(
 
 
 # ---------- Pipeline ----------
+
 
 def run_preprocess(
     input_dir: Path,
@@ -196,13 +214,19 @@ def run_preprocess(
 
 # ---------- CLI ----------
 
-app = typer.Typer(add_completion=False, help="Preprocess raw voice recordings into RVC training clips.")
+app = typer.Typer(
+    add_completion=False, help="Preprocess raw voice recordings into RVC training clips."
+)
 
 
 @app.command()
 def main(
-    input_dir: Path = typer.Option(Path("dataset/raw"), "--input", help="Directory containing raw audio"),
-    output_dir: Path = typer.Option(Path("dataset/processed"), "--output", help="Where to write clips"),
+    input_dir: Path = typer.Option(
+        Path("dataset/raw"), "--input", help="Directory containing raw audio"
+    ),
+    output_dir: Path = typer.Option(
+        Path("dataset/processed"), "--output", help="Where to write clips"
+    ),
     min_len: float = typer.Option(3.0, "--min-len", help="Minimum clip length (seconds)"),
     max_len: float = typer.Option(15.0, "--max-len", help="Maximum clip length (seconds)"),
     target_lufs: int = typer.Option(-20, "--target-lufs", help="Loudness normalization target"),

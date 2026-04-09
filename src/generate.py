@@ -14,6 +14,7 @@ Exit codes:
   2  user input error (empty text, mutually-exclusive flags, bad voice)
   3  runtime error (ffmpeg, edge-tts, rvc subprocess failure)
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -68,6 +69,7 @@ console = Console()
 
 # ---------- Helpers ----------
 
+
 def _slugify(text: str, max_len: int = 40) -> str:
     s = re.sub(r"[^a-zA-Z0-9]+", "_", text.strip())
     s = s.strip("_").lower()
@@ -81,12 +83,14 @@ def _default_output_path(text: str) -> Path:
 
 async def _list_english_voices() -> list[dict]:
     import edge_tts
+
     voices = await edge_tts.list_voices()
     return [v for v in voices if v.get("Locale", "").startswith("en-")]
 
 
 async def _generate_edge_tts(text: str, voice: str, out_mp3: Path) -> None:
     import edge_tts
+
     communicate = edge_tts.Communicate(text, voice)
     await communicate.save(str(out_mp3))
 
@@ -112,19 +116,32 @@ def build_rvc_subprocess_cmd(
     return [
         str(rvc_python),
         "tools/infer_cli.py",
-        "--input_path", str(input_wav.resolve()),
-        "--index_path", str(index_path.resolve()),
-        "--f0method", "rmvpe",
-        "--opt_path", str(output_wav.resolve()),
-        "--model_name", f"{model_name}.pth",
-        "--index_rate", str(index_rate),
-        "--device", device,
-        "--is_half", "True",
-        "--filter_radius", str(filter_radius),
-        "--resample_sr", "0",
-        "--rms_mix_rate", "1",
-        "--protect", "0.33",
-        "--f0up_key", str(pitch),
+        "--input_path",
+        str(input_wav.resolve()),
+        "--index_path",
+        str(index_path.resolve()),
+        "--f0method",
+        "rmvpe",
+        "--opt_path",
+        str(output_wav.resolve()),
+        "--model_name",
+        f"{model_name}.pth",
+        "--index_rate",
+        str(index_rate),
+        "--device",
+        device,
+        "--is_half",
+        "True",
+        "--filter_radius",
+        str(filter_radius),
+        "--resample_sr",
+        "0",
+        "--rms_mix_rate",
+        "1",
+        "--protect",
+        "0.33",
+        "--f0up_key",
+        str(pitch),
     ]
 
 
@@ -147,18 +164,25 @@ def _tail(s: str, n: int) -> str:
 
 # ---------- CLI ----------
 
+
 @app.command()
 def main(
     text: Optional[str] = typer.Argument(None, help="Text to speak"),
     text_file: Optional[Path] = typer.Option(None, "--text-file", help="Read text from a file"),
     out: Optional[Path] = typer.Option(None, "--out", help="Output wav path"),
-    model: str = typer.Option(DEFAULT_MODEL, "--model", help="Model name (resolves to models/<name>.pth + .index)"),
-    tts_voice: str = typer.Option(DEFAULT_EDGE_VOICE, "--tts-voice", help="Edge-TTS voice for stage 1"),
+    model: str = typer.Option(
+        DEFAULT_MODEL, "--model", help="Model name (resolves to models/<name>.pth + .index)"
+    ),
+    tts_voice: str = typer.Option(
+        DEFAULT_EDGE_VOICE, "--tts-voice", help="Edge-TTS voice for stage 1"
+    ),
     pitch: int = typer.Option(0, "--pitch", help="RVC pitch shift in semitones"),
     index_rate: float = typer.Option(0.7, "--index-rate", help="RVC index blending (0.0-1.0)"),
     filter_radius: int = typer.Option(3, "--filter-radius", help="RVC median filter radius"),
     device: str = typer.Option(DEFAULT_DEVICE, "--device", help="GPU device, e.g. cuda:0"),
-    keep_intermediate: bool = typer.Option(False, "--keep-intermediate", help="Preserve Edge-TTS intermediate wav"),
+    keep_intermediate: bool = typer.Option(
+        False, "--keep-intermediate", help="Preserve Edge-TTS intermediate wav"
+    ),
     smoke_test: bool = typer.Option(False, "--smoke-test", help="Run canned end-to-end test"),
     list_voices: bool = typer.Option(False, "--list-voices", help="List English Edge-TTS voices"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print steps without running"),
@@ -180,7 +204,9 @@ def main(
     # --- Resolve text source ---
     if smoke_test:
         if text or text_file:
-            typer.echo("[error] --smoke-test is mutually exclusive with text and --text-file", err=True)
+            typer.echo(
+                "[error] --smoke-test is mutually exclusive with text and --text-file", err=True
+            )
             raise typer.Exit(code=2)
         resolved_text = "Testing the voice pipeline. One, two, three."
     elif text and text_file:
@@ -210,7 +236,10 @@ def main(
 
     model_check = check_model_file(model)
     if not model_check.ok:
-        typer.echo(f"[error] {model_check.name}: {model_check.detail}\n  fix: {model_check.fix_hint}", err=True)
+        typer.echo(
+            f"[error] {model_check.name}: {model_check.detail}\n  fix: {model_check.fix_hint}",
+            err=True,
+        )
         raise typer.Exit(code=1)
 
     index_path = MODELS_DIR / f"{model}.index"
@@ -237,7 +266,10 @@ def main(
         try:
             asyncio.run(_generate_edge_tts(resolved_text, tts_voice, mp3_path))
         except Exception as exc:
-            typer.echo(f"[error] Edge-TTS failed: {exc}\n  hint: check network and voice name (--list-voices)", err=True)
+            typer.echo(
+                f"[error] Edge-TTS failed: {exc}\n  hint: check network and voice name (--list-voices)",
+                err=True,
+            )
             raise typer.Exit(code=2) from exc
         if not mp3_path.exists() or mp3_path.stat().st_size == 0:
             typer.echo("[error] Edge-TTS produced empty output", err=True)
@@ -247,7 +279,17 @@ def main(
         console.print("[cyan][2/3][/cyan] Converting to canonical wav ...")
         try:
             run_ffmpeg(
-                ["-i", str(mp3_path), "-ar", "44100", "-ac", "1", "-sample_fmt", "s16", str(wav_path)],
+                [
+                    "-i",
+                    str(mp3_path),
+                    "-ar",
+                    "44100",
+                    "-ac",
+                    "1",
+                    "-sample_fmt",
+                    "s16",
+                    str(wav_path),
+                ],
                 context="tts-to-canonical",
                 expected_output=wav_path,
             )
