@@ -15,6 +15,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
+# Allow running as a script: ensure project root is on sys.path so the lazy
+# `from src.preprocess import AUDIO_EXTS` inside check_training_dataset_nonempty
+# works whether doctor is invoked as a module (pytest) or a script
+# (`python src/doctor.py --training`, which is how setup_pod.sh calls it).
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+if str(_PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(_PROJECT_ROOT))
+
 import typer
 from rich.console import Console
 from rich.table import Table
