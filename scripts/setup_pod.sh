@@ -253,15 +253,74 @@ fi
 
 # ---------- Layer: RVC venv + weights (delegated) ----------
 echo ""
-echo "--- Layer: RVC venv + weights (delegating to scripts/setup_rvc.sh) ---"
-# D-07, BOOT-05: setup_rvc.sh is invoked unchanged. It is itself idempotent
-# (probe-and-skip for clone/venv/weights) and writes its own log via its own
-# re-exec+tee. It pins pip<24.1 in rvc/.venv and downloads hubert_base.pt,
-# rmvpe.pt, and pretrained_v2/* via rvc/tools/download_models.py.
-if [[ "$FORCE" -eq 1 ]]; then
-  bash "$PROJECT_ROOT/scripts/setup_rvc.sh" --force
+echo "--- Layer: RVC venv + weights ---"
+# D-07, BOOT-05: setup_rvc.sh is invoked byte-for-byte unchanged. It pins
+# pip<24.1 in rvc/.venv (required for fairseq 0.12.2) and downloads
+# hubert_base.pt, rmvpe.pt, and pretrained/pretrained_v2/uvr5_weights/* via
+# rvc/tools/download_models.py.
+#
+# Weight caveat: rvc/tools/download_models.py is NOT probe-and-skip — it
+# unconditionally re-downloads every weight file on every invocation. On a
+# healthy pod this turns a warm re-run into a ~2+ minute network round-trip
+# for bytes we already have on disk. We cannot fix download_models.py
+# (rvc/ is vendored and pinned) and we cannot modify setup_rvc.sh (BOOT-05).
+#
+# Pod contract: pods are ephemeral (the whole FS vanishes when the pod is
+# destroyed) but stable within their lifetime, and we never need to "upgrade
+# to a newer model version" — RVC pretrained weights are frozen artifacts.
+# So if all the provisioning state is already in place, it is safe to skip
+# the setup_rvc.sh delegation entirely and let the subsequent
+# `doctor --training` verification layer be the real gate.
+#
+# Probe surface (MUST all pass to skip the delegation):
+#   1. rvc/ cloned at the pinned commit
+#   2. rvc/.venv is a Python 3.10 venv
+#   3. Torch importable in rvc/.venv with CUDA available
+#   4. All four weight files we size-floor later exist above their floors
+#      (hubert, rmvpe, pretrained_v2/f0G40k, pretrained_v2/f0D40k) plus the
+#      small uvr5 dereverb sentinel vocals.onnx
+# --force disables the skip: the user explicitly asked for a clean reinstall.
+RVC_COMMIT_PIN="7ef19867780cf703841ebafb565a4e47d1ea86ff"
+_rvc_already_provisioned() {
+  [[ "$FORCE" -ne 1 ]] || return 1
+  # (1) clone + pinned commit
+  [[ -d "$RVC_DIR/.git" ]] || return 1
+  local head
+  head="$(git -C "$RVC_DIR" rev-parse HEAD 2>/dev/null || echo "")"
+  [[ "$head" == "$RVC_COMMIT_PIN" ]] || return 1
+  # (2) rvc/.venv is Python 3.10
+  local rvc_py="$RVC_DIR/.venv/bin/python"
+  [[ -x "$rvc_py" ]] || return 1
+  "$rvc_py" --version 2>&1 | grep -q "Python 3.10" || return 1
+  # (3) torch importable with CUDA
+  "$rvc_py" -c "import torch; assert torch.cuda.is_available()" >/dev/null 2>&1 || return 1
+  # (4) weight sentinels above their floors
+  local path size min
+  for entry in \
+    "$RVC_DIR/assets/hubert/hubert_base.pt:100000000" \
+    "$RVC_DIR/assets/rmvpe/rmvpe.pt:100000000" \
+    "$RVC_DIR/assets/pretrained_v2/f0G40k.pth:30000000" \
+    "$RVC_DIR/assets/pretrained_v2/f0D40k.pth:30000000" \
+    "$RVC_DIR/assets/uvr5_weights/onnx_dereverb_By_FoxJoy/vocals.onnx:1000000"; do
+    path="${entry%:*}"
+    min="${entry##*:}"
+    [[ -f "$path" ]] || return 1
+    size=$(stat -c '%s' "$path" 2>/dev/null || echo 0)
+    (( size >= min )) || return 1
+  done
+  return 0
+}
+
+if _rvc_already_provisioned; then
+  echo "RVC already provisioned (clone, venv, torch+CUDA, weights) — skipping setup_rvc.sh."
+  echo "Use --force to wipe and reinstall."
 else
-  bash "$PROJECT_ROOT/scripts/setup_rvc.sh"
+  echo "Delegating to scripts/setup_rvc.sh..."
+  if [[ "$FORCE" -eq 1 ]]; then
+    bash "$PROJECT_ROOT/scripts/setup_rvc.sh" --force
+  else
+    bash "$PROJECT_ROOT/scripts/setup_rvc.sh"
+  fi
 fi
 
 # ---------- Layer: weight file size floors ----------
