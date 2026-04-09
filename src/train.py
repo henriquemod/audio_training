@@ -24,7 +24,9 @@ from __future__ import annotations
 import os
 import re
 import shutil
+import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -542,6 +544,140 @@ def _write_exp_config(
     exp_dir.mkdir(parents=True, exist_ok=True)
     shutil.copy2(src, dst)
     return dst
+
+
+# ---------- Stage runner (subprocess streaming) ----------
+
+
+def _build_subprocess_env() -> dict[str, str]:
+    """Build the env dict passed to every RVC subprocess (D-19, TRAIN-14).
+
+    Returns a fresh copy of ``os.environ`` merged with the offline + locale
+    flags from :data:`SUBPROCESS_EXTRA_ENV`. Does not mutate ``os.environ``.
+    """
+    env = os.environ.copy()
+    env.update(SUBPROCESS_EXTRA_ENV)
+    return env
+
+
+def _is_train_success(returncode: int) -> bool:
+    """Return True iff the RVC train.py exit code indicates success.
+
+    Per TRAIN-07 / D-17, both 0 and 61 are success — RVC's
+    ``os._exit(2333333)`` truncates to 61 on Linux.
+    """
+    return returncode in TRAIN_SUCCESS_EXIT_CODES
+
+
+def _tail_file(path: Path, n: int) -> str:
+    """Return the last ``n`` lines of ``path`` as a single string.
+
+    Returns ``""`` if the file is missing or unreadable. Defensive against
+    multi-GB logs: seeks from the end instead of loading the whole file.
+    """
+    try:
+        size = path.stat().st_size
+    except (FileNotFoundError, PermissionError, OSError):
+        return ""
+    if size == 0:
+        return ""
+    # Read last ~256 B per requested line on average; clamp [4 KiB, 1 MiB].
+    block = min(max(n * 256, 4096), 1024 * 1024)
+    try:
+        with open(path, "rb") as f:
+            if size <= block:
+                f.seek(0)
+            else:
+                f.seek(size - block)
+            data = f.read()
+    except (FileNotFoundError, PermissionError, OSError):
+        return ""
+    try:
+        text = data.decode("utf-8", errors="replace")
+    except UnicodeDecodeError:
+        return ""
+    lines = text.splitlines()
+    return "\n".join(lines[-n:])
+
+
+def _run_stage_streamed(
+    cmd: list[str],
+    *,
+    stage_num: int,
+    stage_name: str,
+    log_path: Path,
+    env: dict[str, str],
+) -> int:
+    """Run a stage subprocess, streaming stdout live to terminal AND ``log_path``.
+
+    Implements D-14: Popen with ``stdout=PIPE, stderr=STDOUT, bufsize=1,
+    text=True, cwd=RVC_DIR``. Iterates ``popen.stdout`` line-by-line (Risk R3
+    mitigation: prevents pipe-buffer deadlock). Writes :data:`STAGE_BANNER`
+    (D-16) to both streams before the first subprocess line.
+
+    Args:
+        cmd: argv list (already built by ``build_rvc_*_cmd``).
+        stage_num: 1-4.
+        stage_name: human-readable name (preprocess / extract_f0 /
+            extract_feature / train).
+        log_path: ``rvc/logs/<exp>/train.log`` — appended to.
+        env: full subprocess environment (from :func:`_build_subprocess_env`).
+
+    Returns:
+        The subprocess's exit code. Caller maps to success/failure via
+        :func:`_is_train_success` or per-stage 0-only logic.
+    """
+    banner = STAGE_BANNER.format(
+        n=stage_num,
+        name=stage_name,
+        ts=datetime.now().strftime("%H:%M:%S"),
+    )
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(log_path, "a", buffering=1, encoding="utf-8") as logf:
+        logf.write("\n" + banner + "\n")
+        sys.stdout.write(banner + "\n")
+        sys.stdout.flush()
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            bufsize=1,
+            text=True,
+            cwd=RVC_DIR,
+            env=env,
+        )
+        assert proc.stdout is not None
+        try:
+            for line in iter(proc.stdout.readline, ""):
+                sys.stdout.write(line)
+                sys.stdout.flush()
+                logf.write(line)
+        finally:
+            proc.stdout.close()
+            proc.wait()
+    return proc.returncode
+
+
+def _print_failure_tail(
+    log_path: Path,
+    *,
+    stage: int,
+    name: str,
+    verbose: bool,
+    extra_hint: str = "",
+) -> None:
+    """Print stage failure context to stderr: tail of ``train.log`` + hints (D-15)."""
+    n = 100 if verbose else 30
+    tail = _tail_file(log_path, n)
+    typer.echo(f"[error] Stage {stage} ({name}) failed", err=True)
+    if tail:
+        typer.echo(tail, err=True)
+    else:
+        typer.echo("(no output captured before crash)", err=True)
+    if "CUDA out of memory" in tail:
+        typer.echo("[hint] lower --batch-size or use --preset low", err=True)
+    if extra_hint:
+        typer.echo(f"[hint] {extra_hint}", err=True)
 
 
 # ---------- CLI validation ----------
