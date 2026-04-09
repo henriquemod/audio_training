@@ -493,36 +493,60 @@ def check_gpu_vram_floor(min_gb: int) -> CheckResult:
 
 
 def check_rvc_mute_refs() -> CheckResult:
-    """Verify RVC mute reference files exist. Phase 2 will tighten this."""
+    """Verify RVC mute reference files exist. Phase 2 will tighten this.
+
+    Never raises: PermissionError/OSError on the mute dir are converted to
+    ok=False results so pre-flight fails cleanly with an actionable fix_hint.
+    """
     mute_dir = RVC_DIR / "logs" / "mute"
-    if not mute_dir.is_dir():
+    try:
+        if not mute_dir.is_dir():
+            return CheckResult(
+                name="rvc mute refs",
+                ok=False,
+                detail=f"{mute_dir.relative_to(PROJECT_ROOT)} missing",
+                fix_hint="Run ./scripts/setup_rvc.sh --force to re-clone RVC.",
+            )
+        if not any(mute_dir.iterdir()):
+            return CheckResult(
+                name="rvc mute refs",
+                ok=False,
+                detail=f"{mute_dir.relative_to(PROJECT_ROOT)} is empty",
+                fix_hint="Run ./scripts/setup_rvc.sh --force.",
+            )
+    except OSError as exc:
         return CheckResult(
             name="rvc mute refs",
             ok=False,
-            detail=f"{mute_dir.relative_to(PROJECT_ROOT)} missing",
-            fix_hint="Run ./scripts/setup_rvc.sh --force to re-clone RVC.",
-        )
-    if not any(mute_dir.iterdir()):
-        return CheckResult(
-            name="rvc mute refs",
-            ok=False,
-            detail=f"{mute_dir.relative_to(PROJECT_ROOT)} is empty",
-            fix_hint="Run ./scripts/setup_rvc.sh --force.",
+            detail=f"cannot read {mute_dir}: {exc}",
+            fix_hint="Check filesystem permissions; re-run ./scripts/setup_rvc.sh --force if corrupt.",
         )
     return CheckResult(name="rvc mute refs", ok=True)
 
 
 def check_hubert_base() -> CheckResult:
-    """Verify hubert_base.pt exists and is not a truncated download."""
+    """Verify hubert_base.pt exists and is not a truncated download.
+
+    Never raises: PermissionError/OSError from stat() are converted to
+    ok=False results so pre-flight fails cleanly with an actionable fix_hint.
+    """
     hubert = RVC_DIR / "assets" / "hubert" / "hubert_base.pt"
-    if not hubert.exists():
+    try:
+        if not hubert.exists():
+            return CheckResult(
+                name="hubert_base.pt",
+                ok=False,
+                detail=f"{hubert.relative_to(PROJECT_ROOT)} missing",
+                fix_hint="Run ./scripts/setup_rvc.sh (downloads pretrained weights).",
+            )
+        size = hubert.stat().st_size
+    except OSError as exc:
         return CheckResult(
             name="hubert_base.pt",
             ok=False,
-            detail=f"{hubert.relative_to(PROJECT_ROOT)} missing",
-            fix_hint="Run ./scripts/setup_rvc.sh (downloads pretrained weights).",
+            detail=f"cannot stat {hubert}: {exc}",
+            fix_hint="Check filesystem permissions; re-run ./scripts/setup_rvc.sh --force if corrupt.",
         )
-    size = hubert.stat().st_size
     if size < HUBERT_MIN_BYTES:
         return CheckResult(
             name="hubert_base.pt",
