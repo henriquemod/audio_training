@@ -89,9 +89,25 @@ fi
 # ---------- Layer: apt prerequisites ----------
 echo ""
 echo "--- Layer: apt prerequisites ---"
-apt-get update -y
-apt-get install -y --no-install-recommends \
-  ca-certificates wget gnupg software-properties-common xz-utils
+# Probe-and-skip: `apt-get update` alone takes ~15-20s on a pod because it
+# has to talk to 6+ mirrors. On a warm re-run every one of these packages is
+# already installed, so we can skip the whole layer if dpkg confirms it.
+# If even one package is missing we fall through to the full update+install
+# path so a partially-provisioned pod still recovers.
+APT_PREREQS=(ca-certificates wget gnupg software-properties-common xz-utils)
+_apt_prereqs_ok() {
+  local pkg
+  for pkg in "${APT_PREREQS[@]}"; do
+    dpkg -s "$pkg" 2>/dev/null | grep -q '^Status: install ok installed' || return 1
+  done
+  return 0
+}
+if _apt_prereqs_ok; then
+  echo "All apt prerequisites already installed — skipping apt update/install."
+else
+  apt-get update -y
+  apt-get install -y --no-install-recommends "${APT_PREREQS[@]}"
+fi
 
 # ---------- Layer: ffmpeg >= 5.0 (BtbN static build) ----------
 echo ""
