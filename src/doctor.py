@@ -29,6 +29,7 @@ MIN_FFMPEG_VERSION = (5, 0, 0)
 REQUIRED_PYTHON = (3, 10)
 REQUIRED_FFMPEG_FILTERS = ("afftdn", "loudnorm", "silencedetect")
 HUBERT_MIN_BYTES = 100_000_000
+PRETRAINED_MIN_BYTES = 30_000_000
 
 
 @dataclass
@@ -559,6 +560,160 @@ def check_hubert_base() -> CheckResult:
     return CheckResult(name="hubert_base.pt", ok=True, detail=f"{size} bytes")
 
 
+# ---------- Training pre-flight (Phase 2 additions) ----------
+
+
+def check_pretrained_v2_weights(
+    sample_rate: int, version: str, if_f0: bool
+) -> CheckResult:
+    """Verify the two pretrained files RVC train.py loads as -pg and -pd.
+
+    Closes the "missing pretrained weights cause silent random-init training"
+    pitfall: RVC train.py does NOT hard-fail when -pg/-pd point at nonexistent
+    paths; it falls through to random initialization. This check is the only
+    defense — it asserts both generator (G) and discriminator (D) weights
+    exist on disk and are non-empty (>= PRETRAINED_MIN_BYTES).
+
+    Args:
+        sample_rate: One of 32000, 40000, 48000.
+        version: "v1" or "v2".
+        if_f0: True for f0-aware models (default), False otherwise.
+
+    Returns:
+        CheckResult with ok=True iff both files present and >= PRETRAINED_MIN_BYTES.
+    """
+    sr_str_map = {32000: "32k", 40000: "40k", 48000: "48k"}
+    sr_str = sr_str_map.get(sample_rate)
+    if sr_str is None:
+        return CheckResult(
+            name="rvc pretrained weights",
+            ok=False,
+            detail=f"unsupported sample_rate={sample_rate}",
+            fix_hint="Use --sample-rate 32000, 40000, or 48000",
+        )
+    sub = "pretrained_v2" if version == "v2" else "pretrained"
+    prefix = "f0" if if_f0 else ""
+    g = RVC_DIR / "assets" / sub / f"{prefix}G{sr_str}.pth"
+    d = RVC_DIR / "assets" / sub / f"{prefix}D{sr_str}.pth"
+    missing = [p for p in (g, d) if not p.exists()]
+    if missing:
+        names = ", ".join(p.name for p in missing)
+        return CheckResult(
+            name="rvc pretrained weights",
+            ok=False,
+            detail=f"missing: {names}",
+            fix_hint=f"Run ./scripts/setup_rvc.sh to download {names}",
+        )
+    for p in (g, d):
+        try:
+            size = p.stat().st_size
+        except OSError as exc:
+            return CheckResult(
+                name="rvc pretrained weights",
+                ok=False,
+                detail=f"cannot stat {p.name}: {exc}",
+                fix_hint="Check filesystem permissions; re-run ./scripts/setup_rvc.sh --force if corrupt.",
+            )
+        if size < PRETRAINED_MIN_BYTES:
+            return CheckResult(
+                name="rvc pretrained weights",
+                ok=False,
+                detail=f"{p.name} is {size} bytes (expected >= {PRETRAINED_MIN_BYTES})",
+                fix_hint="Truncated download. Run ./scripts/setup_rvc.sh --force.",
+            )
+    return CheckResult(
+        name="rvc pretrained weights",
+        ok=True,
+        detail=f"{sub}/{prefix}{{G,D}}{sr_str}.pth",
+    )
+
+
+def check_training_dataset_nonempty(dataset_dir: Path) -> CheckResult:
+    """Verify dataset_dir exists, is a directory, and contains >= 1 audio file.
+
+    "Audio file" = any file whose ``suffix.lower()`` is in
+    :data:`src.preprocess.AUDIO_EXTS`. Imported lazily to avoid a circular
+    import (``src.preprocess`` imports ``check_ffmpeg`` from this module).
+    """
+    # Lazy import: src.preprocess imports from src.doctor, so a top-level
+    # import here would be circular.
+    from src.preprocess import AUDIO_EXTS  # noqa: PLC0415
+
+    if not dataset_dir.exists():
+        return CheckResult(
+            name="training dataset",
+            ok=False,
+            detail=f"not found: {dataset_dir}",
+            fix_hint="Provide --dataset-dir pointing at an existing directory of audio files",
+        )
+    if not dataset_dir.is_dir():
+        return CheckResult(
+            name="training dataset",
+            ok=False,
+            detail=f"not a directory: {dataset_dir}",
+            fix_hint="Pass a directory, not a file",
+        )
+    try:
+        count = sum(
+            1
+            for p in dataset_dir.iterdir()
+            if p.is_file() and p.suffix.lower() in AUDIO_EXTS
+        )
+    except OSError as exc:
+        return CheckResult(
+            name="training dataset",
+            ok=False,
+            detail=f"cannot read {dataset_dir}: {exc}",
+            fix_hint="Check filesystem permissions on the dataset directory.",
+        )
+    if count == 0:
+        return CheckResult(
+            name="training dataset",
+            ok=False,
+            detail=f"no audio files in {dataset_dir} (looked for {sorted(AUDIO_EXTS)})",
+            fix_hint="Run src/preprocess.py first, or point --dataset-dir at the right place",
+        )
+    return CheckResult(
+        name="training dataset",
+        ok=True,
+        detail=f"{count} audio file(s) in {dataset_dir}",
+    )
+
+
+def run_training_checks(
+    *,
+    dataset_dir: Path,
+    sample_rate: int,
+    version: str,
+    if_f0: bool,
+) -> list[CheckResult]:
+    """Compose the full Phase 2 training pre-flight set.
+
+    Single source of truth for `doctor --training` and `src/train.py`'s main().
+    Includes Phase 1's base training checks plus the two Phase 2 additions
+    (check_pretrained_v2_weights, check_training_dataset_nonempty). Returns
+    all results in order; does not raise.
+    """
+    return [
+        check_python_version(),
+        check_ffmpeg(),
+        check_ffmpeg_filters(),
+        check_git(),
+        check_nvidia_smi(),
+        check_rvc_cloned(),
+        check_rvc_venv(),
+        check_rvc_weights(),
+        check_rvc_torch_cuda(),
+        check_slicer2_importable(),
+        check_disk_space_floor(PROJECT_ROOT, 20),
+        check_gpu_vram_floor(12),
+        check_rvc_mute_refs(),
+        check_hubert_base(),
+        check_pretrained_v2_weights(sample_rate, version, if_f0),
+        check_training_dataset_nonempty(dataset_dir),
+    ]
+
+
 # ---------- CLI ----------
 
 app = typer.Typer(add_completion=False, help="Dependency verification for train_audio_model.")
@@ -626,22 +781,17 @@ def main(
     elif runtime:
         selected = runtime_checks
     elif training:
-        selected = [
-            check_python_version,
-            check_ffmpeg,
-            check_ffmpeg_filters,
-            check_git,
-            check_nvidia_smi,
-            check_rvc_cloned,
-            check_rvc_venv,
-            check_rvc_weights,
-            check_rvc_torch_cuda,
-            check_slicer2_importable,
-            lambda: check_disk_space_floor(PROJECT_ROOT, 20),
-            lambda: check_gpu_vram_floor(12),
-            check_rvc_mute_refs,
-            check_hubert_base,
-        ]
+        # Defer execution by wrapping each result as a lambda. run_training_checks
+        # returns a list of already-evaluated CheckResults; _run_checks expects
+        # callables, so wrap the precomputed results.
+        default_dataset = PROJECT_ROOT / "dataset" / "processed"
+        precomputed = run_training_checks(
+            dataset_dir=default_dataset,
+            sample_rate=40000,
+            version="v2",
+            if_f0=True,
+        )
+        selected = [lambda r=r: r for r in precomputed]
     else:
         selected = system_checks + rvc_checks + runtime_checks
 

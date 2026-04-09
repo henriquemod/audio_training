@@ -5,12 +5,16 @@ from __future__ import annotations
 from unittest.mock import patch
 
 from src.doctor import (
+    PRETRAINED_MIN_BYTES,
     check_ffmpeg,
     check_ffmpeg_filters,
     check_mise,
+    check_pretrained_v2_weights,
     check_python_version,
+    check_training_dataset_nonempty,
     parse_ffmpeg_version,
     parse_ffmpeg_version_display,
+    run_training_checks,
 )
 
 # --- parse_ffmpeg_version ---
@@ -193,3 +197,136 @@ def test_check_mise_broken_install_is_soft_fail():
         result = check_mise()
     assert result.ok is False
     assert "mise.jdx.dev" in result.fix_hint
+
+
+# --- check_pretrained_v2_weights (Phase 2) ---
+
+
+def test_check_pretrained_v2_weights_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)
+    result = check_pretrained_v2_weights(40000, "v2", if_f0=True)
+    assert not result.ok
+    assert "f0G40k.pth" in result.detail or "f0D40k.pth" in result.detail
+    assert result.fix_hint  # non-empty
+
+
+def test_check_pretrained_v2_weights_truncated(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)
+    sub = tmp_path / "assets" / "pretrained_v2"
+    sub.mkdir(parents=True)
+    (sub / "f0G40k.pth").write_bytes(b"\x00" * 100)
+    (sub / "f0D40k.pth").write_bytes(b"\x00" * 100)
+    result = check_pretrained_v2_weights(40000, "v2", if_f0=True)
+    assert not result.ok
+    assert "bytes" in result.detail
+    assert "Truncated" in result.fix_hint or "truncated" in result.fix_hint.lower()
+
+
+def _sparse(path, size):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "wb") as f:
+        if size > 0:
+            f.seek(size - 1)
+            f.write(b"\x00")
+
+
+def test_check_pretrained_v2_weights_ok(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)
+    sub = tmp_path / "assets" / "pretrained_v2"
+    sub.mkdir(parents=True)
+    _sparse(sub / "f0G40k.pth", PRETRAINED_MIN_BYTES + 1)
+    _sparse(sub / "f0D40k.pth", PRETRAINED_MIN_BYTES + 1)
+    result = check_pretrained_v2_weights(40000, "v2", if_f0=True)
+    assert result.ok, f"expected ok, got: {result.detail}"
+
+
+def test_check_pretrained_v1_no_f0_uses_pretrained_dir(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)
+    sub = tmp_path / "assets" / "pretrained"
+    sub.mkdir(parents=True)
+    _sparse(sub / "G40k.pth", PRETRAINED_MIN_BYTES + 1)
+    _sparse(sub / "D40k.pth", PRETRAINED_MIN_BYTES + 1)
+    result = check_pretrained_v2_weights(40000, "v1", if_f0=False)
+    assert result.ok
+
+
+def test_check_pretrained_v2_weights_bad_sample_rate(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.doctor.RVC_DIR", tmp_path)
+    result = check_pretrained_v2_weights(44100, "v2", if_f0=True)
+    assert not result.ok
+    assert "44100" in result.detail
+
+
+# --- check_training_dataset_nonempty (Phase 2) ---
+
+
+def test_check_training_dataset_nonempty_missing(tmp_path):
+    result = check_training_dataset_nonempty(tmp_path / "nope")
+    assert not result.ok
+    assert "not found" in result.detail
+
+
+def test_check_training_dataset_nonempty_not_dir(tmp_path):
+    f = tmp_path / "file.wav"
+    f.touch()
+    result = check_training_dataset_nonempty(f)
+    assert not result.ok
+    assert "not a directory" in result.detail
+
+
+def test_check_training_dataset_nonempty_empty(tmp_path):
+    result = check_training_dataset_nonempty(tmp_path)
+    assert not result.ok
+    assert "no audio files" in result.detail
+
+
+def test_check_training_dataset_nonempty_only_txt(tmp_path):
+    (tmp_path / "readme.txt").touch()
+    result = check_training_dataset_nonempty(tmp_path)
+    assert not result.ok
+
+
+def test_check_training_dataset_nonempty_ok(tmp_path):
+    (tmp_path / "a.wav").touch()
+    (tmp_path / "b.flac").touch()
+    result = check_training_dataset_nonempty(tmp_path)
+    assert result.ok
+    assert "2 audio file" in result.detail
+
+
+# --- run_training_checks composition ---
+
+
+def test_run_training_checks_returns_list_of_results(tmp_path, monkeypatch):
+    # Stub out every underlying check so we verify composition only.
+    from src import doctor as d
+
+    def _ok(name="x"):
+        return d.CheckResult(name=name, ok=True, detail="ok")
+
+    monkeypatch.setattr(d, "check_python_version", lambda: _ok("py"))
+    monkeypatch.setattr(d, "check_ffmpeg", lambda: _ok("ffmpeg"))
+    monkeypatch.setattr(d, "check_nvidia_smi", lambda: _ok("nvidia"))
+    monkeypatch.setattr(d, "check_rvc_cloned", lambda: _ok("cloned"))
+    monkeypatch.setattr(d, "check_rvc_venv", lambda: _ok("venv"))
+    monkeypatch.setattr(d, "check_rvc_weights", lambda: _ok("weights"))
+    monkeypatch.setattr(d, "check_rvc_torch_cuda", lambda: _ok("torch"))
+    monkeypatch.setattr(d, "check_disk_space_floor", lambda *a, **k: _ok("disk"))
+    monkeypatch.setattr(d, "check_gpu_vram_floor", lambda *a, **k: _ok("vram"))
+    monkeypatch.setattr(d, "check_rvc_mute_refs", lambda: _ok("mute"))
+    monkeypatch.setattr(d, "check_hubert_base", lambda: _ok("hubert"))
+    monkeypatch.setattr(
+        d, "check_pretrained_v2_weights", lambda *a, **k: _ok("pretrained")
+    )
+    monkeypatch.setattr(
+        d, "check_training_dataset_nonempty", lambda *a, **k: _ok("dataset")
+    )
+    results = run_training_checks(
+        dataset_dir=tmp_path, sample_rate=40000, version="v2", if_f0=True
+    )
+    assert isinstance(results, list)
+    assert len(results) >= 12
+    assert all(r.ok for r in results)
+    names = [r.name for r in results]
+    assert "pretrained" in names
+    assert "dataset" in names
