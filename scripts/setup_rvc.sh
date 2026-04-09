@@ -110,6 +110,16 @@ echo ""
 echo "--- Pinning gradio_client==0.2.7 to match gradio 3.34.0 ---"
 "$RVC_PIP" install 'gradio_client==0.2.7'
 
+# Pin matplotlib<3.8 to keep FigureCanvasAgg.tostring_rgb().
+# RVC's infer/lib/train/utils.py calls fig.canvas.tostring_rgb() when plotting
+# spectrograms during training. That method was deprecated in matplotlib 3.8
+# and removed in 3.10, so an unpinned install crashes training with
+# AttributeError: 'FigureCanvasAgg' object has no attribute 'tostring_rgb'.
+# 3.7.3 is the last 3.7.x release and is contemporary with RVC's pinned commit.
+echo ""
+echo "--- Pinning matplotlib==3.7.3 (RVC training uses removed tostring_rgb) ---"
+"$RVC_PIP" install 'matplotlib==3.7.3'
+
 # Download pretrained weights
 echo ""
 echo "--- Downloading pretrained weights (hubert_base.pt, rmvpe.pt, ...) ---"

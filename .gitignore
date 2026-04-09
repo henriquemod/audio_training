@@ -27,3 +27,5 @@ scripts/setup_rvc.log
 .vscode/
 .idea/
 *.swp
+
+docs
