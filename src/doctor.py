@@ -515,6 +515,7 @@ def main(
     system_only: bool = typer.Option(False, "--system-only", help="Only check system-level deps"),
     rvc_only: bool = typer.Option(False, "--rvc-only", help="Only check RVC state"),
     runtime: bool = typer.Option(False, "--runtime", help="Only check Python runtime imports"),
+    training: bool = typer.Option(False, "--training", help="Run full training pre-flight set"),
     model: Optional[str] = typer.Option(
         None, "--model", help="Also verify this model exists in models/"
     ),
@@ -545,6 +546,23 @@ def main(
         selected = rvc_checks
     elif runtime:
         selected = runtime_checks
+    elif training:
+        selected = [
+            check_python_version,
+            check_ffmpeg,
+            check_ffmpeg_filters,
+            check_git,
+            check_nvidia_smi,
+            check_rvc_cloned,
+            check_rvc_venv,
+            check_rvc_weights,
+            check_rvc_torch_cuda,
+            check_slicer2_importable,
+            lambda: check_disk_space_floor(PROJECT_ROOT, 20),
+            lambda: check_gpu_vram_floor(12),
+            check_rvc_mute_refs,
+            check_hubert_base,
+        ]
     else:
         selected = system_checks + rvc_checks + runtime_checks
 
