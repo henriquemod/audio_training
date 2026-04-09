@@ -25,7 +25,9 @@
   2. Re-running `bash scripts/setup_pod.sh` on an already-provisioned pod completes in under 30 seconds (all probe-and-skip sentinels fire correctly) and exits 0 without modifying any venv
   3. Running `python src/doctor.py --training` passes all checks on a provisioned pod: CUDA available, disk space floor met, GPU VRAM floor met, pretrained v2 weights present, hubert base present
   4. Unit tests for `check_disk_space_floor` and `check_gpu_vram_floor` pass in CI without a real GPU (mocked `shutil.disk_usage` and mocked `rvc/.venv` torch call)
-**Plans**: TBD
+**Plans**: 2 plans
+- [ ] 01-01-doctor-training-checks-PLAN.md — Add check_disk_space_floor, check_gpu_vram_floor, check_rvc_mute_refs, check_hubert_base + --training flag + unit tests (BOOT-09, BOOT-10)
+- [ ] 01-02-setup-pod-script-PLAN.md — Create scripts/setup_pod.sh (CUDA→Python→app venv→RVC delegation→weight floor→doctor --training) (BOOT-01..BOOT-08)
 **UI hint**: no
 
 ### Phase 2: Training CLI
