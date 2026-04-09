@@ -311,7 +311,7 @@ _rvc_already_provisioned() {
   # (3) torch importable with CUDA
   "$rvc_py" -c "import torch; assert torch.cuda.is_available()" >/dev/null 2>&1 || return 1
   # (4) weight sentinels above their floors
-  local path size min
+  local path size min entry
   for entry in \
     "$RVC_DIR/assets/hubert/hubert_base.pt:100000000" \
     "$RVC_DIR/assets/rmvpe/rmvpe.pt:100000000" \
