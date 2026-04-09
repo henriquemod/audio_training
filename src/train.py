@@ -680,6 +680,207 @@ def _print_failure_tail(
         typer.echo(f"[hint] {extra_hint}", err=True)
 
 
+# ---------- Pipeline orchestrator ----------
+
+
+def run_pipeline(
+    *,
+    experiment_name: str,
+    dataset_dir: Path,
+    sample_rate: int,
+    rvc_version: str,
+    f0_method: str,
+    hp: dict[str, int],
+    num_procs: int,
+    gpus: str,
+    pretrained_g: Path,
+    pretrained_d: Path,
+    if_f0: bool,
+    verbose: bool,
+) -> int:
+    """Orchestrate stages 1-4 with intrinsic probe-and-skip resume.
+
+    See RESEARCH.md §5 for the decision tree and CONTEXT.md
+    D-08 / D-09 / D-14 / D-15 / D-16 / D-18 for the covering decisions.
+
+    Args:
+        experiment_name: Bare experiment name (already validated).
+        dataset_dir: Absolute path to the input audio directory.
+        sample_rate: 32000 / 40000 / 48000.
+        rvc_version: "v1" or "v2".
+        f0_method: One of :data:`VALID_F0_METHODS`.
+        hp: Dict with keys ``epochs``, ``batch_size``, ``save_every``.
+        num_procs: Worker count for stages 1 and 2.
+        gpus: GPU index string for stage 4 (e.g. ``"0"``).
+        pretrained_g: Absolute path to the generator pretrained weight.
+        pretrained_d: Absolute path to the discriminator pretrained weight.
+        if_f0: Pitch-guided training toggle.
+        verbose: If True, failure tails include 100 lines instead of 30.
+
+    Returns:
+        ``0`` on success; ``3`` on any stage failure, silent post-run sentinel
+        mismatch, or missing final weight file. The caller (``main()``) maps
+        this to ``typer.Exit(code=rc)``.
+    """
+    exp_dir = (RVC_DIR / "logs" / experiment_name).resolve()
+    weight_path = (RVC_DIR / "assets" / "weights" / f"{experiment_name}.pth").resolve()
+    log_path = exp_dir / "train.log"
+
+    # D-09 fast-path: experiment already complete?
+    if stage_4_is_done(weight_path):
+        sys.stdout.write(
+            f"Experiment '{experiment_name}' already complete — "
+            f"final weight at {weight_path}\n"
+        )
+        return 0
+
+    # Count expected outputs from the input dataset (D-08).
+    n = count_dataset_inputs(dataset_dir)
+    if n == 0:
+        # Doctor should have caught this; defensive second line of defense.
+        typer.echo(
+            f"[error] dataset {dataset_dir} contains no audio files", err=True
+        )
+        return 3
+
+    exp_dir.mkdir(parents=True, exist_ok=True)
+    env = _build_subprocess_env()
+
+    # ----- Stage 1: preprocess -----
+    if stage_1_is_done(exp_dir, n):
+        count = len(list((exp_dir / "0_gt_wavs").glob("*.wav")))
+        sys.stdout.write(
+            f"Stage 1: skipping — already populated ({count} files)\n"
+        )
+    else:
+        rc = _run_stage_streamed(
+            build_rvc_preprocess_cmd(
+                rvc_python=RVC_VENV_PYTHON,
+                dataset_dir=dataset_dir,
+                sample_rate=sample_rate,
+                num_procs=num_procs,
+                exp_name=experiment_name,
+            ),
+            stage_num=1,
+            stage_name="preprocess",
+            log_path=log_path,
+            env=env,
+        )
+        if rc != 0:
+            _print_failure_tail(log_path, stage=1, name="preprocess", verbose=verbose)
+            return 3
+        if not stage_1_is_done(exp_dir, n):
+            _print_failure_tail(
+                log_path, stage=1, name="preprocess", verbose=verbose,
+                extra_hint=f"Stage 1 exited 0 but 0_gt_wavs/ has fewer than {n} files",
+            )
+            return 3
+
+    # ----- Stage 2: extract_f0 -----
+    if stage_2_is_done(exp_dir, n):
+        sys.stdout.write("Stage 2: skipping — already populated\n")
+    else:
+        rc = _run_stage_streamed(
+            build_rvc_extract_f0_cmd(
+                rvc_python=RVC_VENV_PYTHON,
+                exp_name=experiment_name,
+                num_procs=num_procs,
+                f0_method=f0_method,
+            ),
+            stage_num=2,
+            stage_name="extract_f0",
+            log_path=log_path,
+            env=env,
+        )
+        if rc != 0:
+            _print_failure_tail(log_path, stage=2, name="extract_f0", verbose=verbose)
+            return 3
+        if not stage_2_is_done(exp_dir, n):
+            _print_failure_tail(
+                log_path, stage=2, name="extract_f0", verbose=verbose,
+                extra_hint=f"Stage 2 exited 0 but f0 output count is below expected {n}",
+            )
+            return 3
+
+    # ----- Stage 3: extract_feature -----
+    if stage_3_is_done(exp_dir, n, rvc_version):
+        sys.stdout.write("Stage 3: skipping — already populated\n")
+    else:
+        rc = _run_stage_streamed(
+            build_rvc_extract_feature_cmd(
+                rvc_python=RVC_VENV_PYTHON,
+                exp_name=experiment_name,
+                version=rvc_version,
+            ),
+            stage_num=3,
+            stage_name="extract_feature",
+            log_path=log_path,
+            env=env,
+        )
+        if rc != 0:
+            _print_failure_tail(log_path, stage=3, name="extract_feature", verbose=verbose)
+            return 3
+        # STATE.md pitfall: extract_feature_print.py exits 0 when hubert is missing.
+        # Post-run sentinel catches the silent failure.
+        if not stage_3_is_done(exp_dir, n, rvc_version):
+            _print_failure_tail(
+                log_path, stage=3, name="extract_feature", verbose=verbose,
+                extra_hint=(
+                    "Stage 3 exited 0 but feature output is empty/short. "
+                    "Likely hubert_base.pt is missing or corrupt — "
+                    "run scripts/setup_rvc.sh."
+                ),
+            )
+            return 3
+
+    # ----- Pre-Stage 4: filelist + config (always regenerate; idempotent) -----
+    try:
+        _write_filelist(exp_dir, version=rvc_version, sample_rate=sample_rate, if_f0=if_f0)
+        _write_exp_config(exp_dir, version=rvc_version, sample_rate=sample_rate)
+    except (RuntimeError, FileNotFoundError) as exc:
+        typer.echo(f"[error] pre-stage 4 setup failed: {exc}", err=True)
+        return 3
+
+    # ----- Stage 4: train -----
+    rc = _run_stage_streamed(
+        build_rvc_train_cmd(
+            rvc_python=RVC_VENV_PYTHON,
+            exp_name=experiment_name,
+            sample_rate=sample_rate,
+            version=rvc_version,
+            epochs=hp["epochs"],
+            batch_size=hp["batch_size"],
+            save_every=hp["save_every"],
+            f0_method=f0_method,
+            pretrained_g=pretrained_g,
+            pretrained_d=pretrained_d,
+            if_f0=if_f0,
+            gpus=gpus,
+        ),
+        stage_num=4,
+        stage_name="train",
+        log_path=log_path,
+        env=env,
+    )
+    if not _is_train_success(rc):
+        _print_failure_tail(log_path, stage=4, name="train", verbose=verbose)
+        return 3
+
+    # D-18: cross-check the final weight file.
+    if not stage_4_is_done(weight_path):
+        _print_failure_tail(
+            log_path, stage=4, name="train", verbose=verbose,
+            extra_hint=(
+                "RVC reported success but no weight file was produced — "
+                "check train.log for silent failures"
+            ),
+        )
+        return 3
+
+    sys.stdout.write(f"\nTraining complete. Output: {weight_path}\n")
+    return 0
+
+
 # ---------- CLI validation ----------
 
 
@@ -837,15 +1038,22 @@ def main(
             typer.echo(f"[hint] {first.fix_hint}", err=True)
         raise typer.Exit(code=1)
 
-    # Step 5: stage runner (Plan 03 will fill this in).
-    console.print(
-        f"[yellow]TODO Plan 03: stage runner not yet wired. "
-        f"exp={experiment_name} hp={hp} dataset={dataset_dir_abs} "
-        f"pretrained_g={pretrained_g} pretrained_d={pretrained_d} "
-        f"num_procs={num_procs} gpus={gpus} f0={f0_method} verbose={verbose}"
-        f"[/yellow]"
+    # Step 5: run the four-stage pipeline (Plan 03 — TRAIN-02 / TRAIN-08 / TRAIN-11).
+    rc = run_pipeline(
+        experiment_name=experiment_name,
+        dataset_dir=dataset_dir_abs,
+        sample_rate=sample_rate,
+        rvc_version=rvc_version,
+        f0_method=f0_method,
+        hp=hp,
+        num_procs=num_procs,
+        gpus=gpus,
+        pretrained_g=pretrained_g,
+        pretrained_d=pretrained_d,
+        if_f0=if_f0,
+        verbose=verbose,
     )
-    raise typer.Exit(code=0)
+    raise typer.Exit(code=rc)
 
 
 if __name__ == "__main__":

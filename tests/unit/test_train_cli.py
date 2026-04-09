@@ -164,9 +164,16 @@ def test_doctor_failure_exits_1(tmp_path, monkeypatch):
     assert "fix it" in combined
 
 
-def test_all_valid_reaches_runner_stub(tmp_path, monkeypatch):
-    """All flags valid + doctor pass -> exits 0 with the Plan-03 TODO marker."""
+def test_all_valid_reaches_runner(tmp_path, monkeypatch):
+    """All flags valid + doctor pass -> run_pipeline is invoked and its rc is returned."""
     monkeypatch.setattr("src.train.run_training_checks", _all_ok_stub)
+    calls = {}
+
+    def fake_run_pipeline(**kwargs):
+        calls.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("src.train.run_pipeline", fake_run_pipeline)
     ds = _make_dataset(tmp_path)
     result = runner.invoke(
         app,
@@ -177,13 +184,20 @@ def test_all_valid_reaches_runner_stub(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0
-    combined = (result.stdout or "") + (result.stderr or "")
-    assert "TODO Plan 03" in combined
+    assert calls["experiment_name"] == "smoke"
+    assert calls["hp"]["epochs"] == 1
 
 
 def test_preset_override_reaches_main(tmp_path, monkeypatch):
     """Smoke verifies preset + override resolution does not crash."""
     monkeypatch.setattr("src.train.run_training_checks", _all_ok_stub)
+    captured = {}
+
+    def fake_run_pipeline(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr("src.train.run_pipeline", fake_run_pipeline)
     ds = _make_dataset(tmp_path)
     result = runner.invoke(
         app,
@@ -195,6 +209,24 @@ def test_preset_override_reaches_main(tmp_path, monkeypatch):
         ],
     )
     assert result.exit_code == 0
+    assert captured["hp"]["epochs"] == 800
+    assert captured["hp"]["batch_size"] == 40  # high preset default
+
+
+def test_run_pipeline_failure_exit_code_propagates(tmp_path, monkeypatch):
+    """If run_pipeline returns 3, main() exits 3."""
+    monkeypatch.setattr("src.train.run_training_checks", _all_ok_stub)
+    monkeypatch.setattr("src.train.run_pipeline", lambda **kw: 3)
+    ds = _make_dataset(tmp_path)
+    result = runner.invoke(
+        app,
+        [
+            "--experiment-name", "smoke",
+            "--dataset-dir", str(ds),
+            "--preset", "smoke",
+        ],
+    )
+    assert result.exit_code == 3
 
 
 def test_dataset_dir_missing_reaches_doctor_exit_1(tmp_path, monkeypatch):
