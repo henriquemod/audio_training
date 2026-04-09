@@ -61,7 +61,9 @@ def parse_ffmpeg_version(output: str) -> tuple[int, int, int] | None:
         minor = int(stable.group(2))
         patch = int(stable.group(3) or 0)
         return (major, minor, patch)
-    nightly = re.search(r"ffmpeg version N-\d+", output)
+    # Require a git sha suffix so this never matches a hypothetical future
+    # stable release that happens to adopt an `N-<number>` tag scheme.
+    nightly = re.search(r"ffmpeg version N-\d+-g[0-9a-f]{5,}", output)
     if nightly:
         return (9999, 0, 0)
     return None

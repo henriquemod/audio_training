@@ -43,6 +43,13 @@ def test_parse_ffmpeg_version_nightly_btbn_build():
     assert result[0] >= 9999
 
 
+def test_parse_ffmpeg_version_n_without_git_sha_rejected():
+    # A hypothetical future stable release tagged `N-5` must NOT be mapped to
+    # the nightly sentinel. Without a `-g<sha>` suffix, we should reject it.
+    output = "ffmpeg version N-5 Copyright (c) 2000-2030"
+    assert parse_ffmpeg_version(output) is None
+
+
 # --- parse_ffmpeg_version_display ---
 
 
