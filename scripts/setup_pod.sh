@@ -103,9 +103,16 @@ _ffmpeg_ok() {
   command -v ffmpeg >/dev/null 2>&1 || return 1
   local ver
   ver="$(ffmpeg -version 2>/dev/null | head -1 | awk '{print $3}')"
-  local major="${ver%%.*}"
-  [[ "$major" =~ ^[0-9]+$ ]] || return 1
-  (( major >= 5 )) || return 1
+  # Accept either a tagged release (5.1.2) or a nightly/git build (N-123884-...).
+  # Nightlies are always on master and far above the 5.0 floor — treat as OK.
+  # Matches src/doctor.py:parse_ffmpeg_version.
+  if [[ "$ver" =~ ^N-[0-9]+ ]]; then
+    :  # nightly build — version floor satisfied by construction
+  else
+    local major="${ver%%.*}"
+    [[ "$major" =~ ^[0-9]+$ ]] || return 1
+    (( major >= 5 )) || return 1
+  fi
   # Filter presence check — matches REQUIRED_FFMPEG_FILTERS in src/doctor.py.
   local filters
   filters="$(ffmpeg -hide_banner -filters 2>/dev/null)"

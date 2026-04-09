@@ -10,6 +10,7 @@ from src.doctor import (
     check_mise,
     check_python_version,
     parse_ffmpeg_version,
+    parse_ffmpeg_version_display,
 )
 
 # --- parse_ffmpeg_version ---
@@ -27,6 +28,39 @@ def test_parse_ffmpeg_version_short():
 
 def test_parse_ffmpeg_version_unparseable_returns_none():
     assert parse_ffmpeg_version("garbage output") is None
+
+
+def test_parse_ffmpeg_version_nightly_btbn_build():
+    # BtbN static builds used on training pods report a git tag, not a release.
+    output = (
+        "ffmpeg version N-123884-gd3d0b7a5ee-20260409 "
+        "Copyright (c) 2000-2026 the FFmpeg developers"
+    )
+    result = parse_ffmpeg_version(output)
+    assert result is not None
+    # Sentinel major must be high enough to satisfy any realistic floor.
+    assert result >= (5, 0, 0)
+    assert result[0] >= 9999
+
+
+# --- parse_ffmpeg_version_display ---
+
+
+def test_parse_ffmpeg_version_display_stable():
+    output = "ffmpeg version 6.1.1-3ubuntu5 Copyright (c) 2000-2023 the FFmpeg developers"
+    assert parse_ffmpeg_version_display(output) == "6.1.1-3ubuntu5"
+
+
+def test_parse_ffmpeg_version_display_nightly():
+    output = (
+        "ffmpeg version N-123884-gd3d0b7a5ee-20260409 "
+        "Copyright (c) 2000-2026 the FFmpeg developers"
+    )
+    assert parse_ffmpeg_version_display(output) == "N-123884-gd3d0b7a5ee-20260409"
+
+
+def test_parse_ffmpeg_version_display_unknown():
+    assert parse_ffmpeg_version_display("no version info here") == "unknown"
 
 
 # --- check_ffmpeg ---
@@ -57,6 +91,22 @@ def test_check_ffmpeg_missing():
         result = check_ffmpeg()
     assert result.ok is False
     assert "apt install ffmpeg" in result.fix_hint
+
+
+def test_check_ffmpeg_nightly_btbn_build_accepted():
+    # BtbN static ffmpeg (used by scripts/setup_pod.sh) reports a git-tag version.
+    # The check must accept it and surface the raw build tag in `detail` rather
+    # than a misleading `9999.0.0`.
+    fake_output = (
+        "ffmpeg version N-123884-gd3d0b7a5ee-20260409 "
+        "Copyright (c) 2000-2026 the FFmpeg developers"
+    )
+    with patch("subprocess.run") as mock_run:
+        mock_run.return_value.returncode = 0
+        mock_run.return_value.stdout = fake_output
+        result = check_ffmpeg()
+    assert result.ok is True
+    assert result.detail == "N-123884-gd3d0b7a5ee-20260409"
 
 
 # --- check_ffmpeg_filters ---

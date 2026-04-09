@@ -46,14 +46,36 @@ Check = CheckResult  # alias for test imports
 
 
 def parse_ffmpeg_version(output: str) -> tuple[int, int, int] | None:
-    """Parse `ffmpeg -version` output and return (major, minor, patch), or None."""
-    match = re.search(r"ffmpeg version (\d+)\.(\d+)(?:\.(\d+))?", output)
-    if not match:
-        return None
-    major = int(match.group(1))
-    minor = int(match.group(2))
-    patch = int(match.group(3) or 0)
-    return (major, minor, patch)
+    """Parse `ffmpeg -version` output and return (major, minor, patch), or None.
+
+    Handles two formats:
+    - Tagged releases: `ffmpeg version 5.1.2 Copyright ...`       → (5, 1, 2)
+    - Nightly/git builds (e.g. BtbN static builds used on training pods):
+      `ffmpeg version N-123884-gd3d0b7a5ee-20260409 Copyright ...` → (9999, 0, 0)
+      Nightly builds are always on master, well above any sane floor, so we
+      return a sentinel major that satisfies every version comparison.
+    """
+    stable = re.search(r"ffmpeg version (\d+)\.(\d+)(?:\.(\d+))?", output)
+    if stable:
+        major = int(stable.group(1))
+        minor = int(stable.group(2))
+        patch = int(stable.group(3) or 0)
+        return (major, minor, patch)
+    nightly = re.search(r"ffmpeg version N-\d+", output)
+    if nightly:
+        return (9999, 0, 0)
+    return None
+
+
+def parse_ffmpeg_version_display(output: str) -> str:
+    """Return the raw version token from the first line of `ffmpeg -version`.
+
+    Used for human-facing detail strings so that nightly builds show their
+    actual build tag (e.g. `N-123884-gd3d0b7a5ee-20260409`) instead of the
+    sentinel `9999.0.0` that `parse_ffmpeg_version` returns for comparison.
+    """
+    match = re.search(r"ffmpeg version (\S+)", output)
+    return match.group(1) if match else "unknown"
 
 
 # ---------- System checks ----------
@@ -128,17 +150,18 @@ def check_ffmpeg() -> CheckResult:
             detail="could not parse ffmpeg version output",
             fix_hint="Reinstall ffmpeg: sudo apt install --reinstall ffmpeg",
         )
+    display = parse_ffmpeg_version_display(proc.stdout)
     if version < MIN_FFMPEG_VERSION:
         return CheckResult(
             name="ffmpeg",
             ok=False,
-            detail=f"found {version[0]}.{version[1]}.{version[2]}",
+            detail=f"found {display}",
             fix_hint="Need ffmpeg >= 5.0. Install a newer version (your distro may ship an older one).",
         )
     return CheckResult(
         name="ffmpeg",
         ok=True,
-        detail=f"{version[0]}.{version[1]}.{version[2]}",
+        detail=display,
     )
 
 
