@@ -42,9 +42,9 @@
   4. `python -m pytest tests/unit/test_train.py` passes without a GPU: all four builder functions (`build_rvc_preprocess_cmd`, `build_rvc_extract_f0_cmd`, `build_rvc_extract_feature_cmd`, `build_rvc_train_cmd`) assert exact argv contents for representative inputs
   5. On a deliberate training failure (bad experiment name), exit code is 3 and the last 30 lines of the failed subprocess stderr are printed to the terminal with stage context
 **Plans**: 3 plans
-- [ ] 02-01-rvc-arg-builders-PLAN.md — Pure arg builders (4), filelist + config helpers, sentinel probes, preset/pretrained resolvers, full unit-test coverage (TRAIN-01..05, 13, 14)
-- [ ] 02-02-doctor-and-cli-PLAN.md — Doctor pre-flight (check_pretrained_v2_weights, check_training_dataset_nonempty, run_training_checks) + typer CLI with flag validation (TRAIN-01, 06, 12, 13)
-- [ ] 02-03-stage-runner-PLAN.md — Streamed subprocess runner, sentinel-skip orchestrator, exit-code mapping, failure tailing, Stage 4 weight cross-check (TRAIN-02, 07-12, 14)
+- [x] 02-01-rvc-arg-builders-PLAN.md — Pure arg builders (4), filelist + config helpers, sentinel probes, preset/pretrained resolvers, full unit-test coverage (TRAIN-01..05, 13, 14)
+- [x] 02-02-doctor-and-cli-PLAN.md — Doctor pre-flight (check_pretrained_v2_weights, check_training_dataset_nonempty, run_training_checks) + typer CLI with flag validation (TRAIN-01, 06, 12, 13)
+- [x] 02-03-stage-runner-PLAN.md — Streamed subprocess runner, sentinel-skip orchestrator, exit-code mapping, failure tailing, Stage 4 weight cross-check (TRAIN-02, 07-12, 14)
 **UI hint**: no
 
 ### Phase 3: Index Training + Auto-Export
